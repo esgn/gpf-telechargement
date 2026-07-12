@@ -1,0 +1,527 @@
+{
+  // Catalogue éditorial du site de téléchargement Géoplateforme.
+  // L'API IGN ne fournit aucune métadonnée éditoriale : titre affichable, thème,
+  // résumé et liens de spécification sont maintenus ICI, joints au crawl via « id »
+  // (le nom exact de la ressource dans .../resource/{id}).
+  //
+  // Ce fichier tolère les commentaires « // » et les virgules finales (cf.
+  // gpf/catalogue.py:strip_json_comments). Pour masquer un produit sans le
+  // supprimer : "include": false. Pour lister les nouveaux produits de l'API
+  // absents d'ici : python build.py --check
+
+  "site": {
+    "title": "Téléchargement Géoplateforme",
+    // Chapô affiché sous le titre de l'accueil (texte simple ; vide = pas de chapô).
+    "intro": "Parcourez et téléchargez les données ouvertes de l'IGN diffusées par le service de téléchargement de la Géoplateforme, organisées par thème.",
+    "base_url": "https://data.geopf.fr/telechargement",
+    "official_help_url": "https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/",
+    // Bloc « aide » en bas de l'accueil : phrase + libellé du lien (vers official_help_url).
+    // help_text vide → bloc masqué.
+    "help_text": "Besoin d'aide sur le service de téléchargement ? Voir",
+    "help_link_label": "la documentation officielle cartes.gouv.fr",
+    // Pied de page, en Markdown (liens autorisés). « Généré le <date>. » est préfixé
+    // automatiquement au build.
+    "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr.",
+    // Garde-fou : un dossier dépassant ce nombre d'entrées n'est pas déplié (0 = illimité).
+    "max_entries": 50000
+  },
+
+  // Producteurs affichés sur les cartes produit. Chaque produit référence un
+  // producteur par son « id » (champ "producer"). « logo » est un chemin relatif
+  // au dossier assets/ (copié tel quel vers site/assets/ au build) : si présent,
+  // le logo est affiché sur la carte, sinon le « name » l'est en texte. Un produit
+  // sans "producer" (ou avec un producteur inconnu) n'affiche aucun badge.
+  "producers": [
+    { "id": "ign", "name": "IGN", "logo": "logos/ign.svg" },
+    { "id": "insee", "name": "INSEE", "logo": "logos/insee.svg" },
+    { "id": "sdes", "name": "SDES", "logo": "logos/sdes.svg" },
+    { "id": "inrae", "name": "INRAE", "logo": "logos/inrae.svg" }
+  ],
+
+  // Thèmes dans l'ordre d'affichage. Un produit sans thème (ou thème inconnu)
+  // atterrit dans « Autres jeux de données ».
+  "themes": [
+    { "id": "topo",        "label": "Référentiels topographiques" },
+    { "id": "imagerie",    "label": "Imagerie aérienne & ortho" },
+    { "id": "cartes",      "label": "Cartes & SCAN" },
+    { "id": "admin",       "label": "Découpage administratif" },
+    { "id": "adresse",     "label": "Adresses" },
+    { "id": "parcellaire", "label": "Parcellaire & cadastre" },
+    { "id": "lidar",       "label": "LiDAR & nuages de points" },
+    { "id": "altimetrie",  "label": "Altimétrie & relief" },
+    { "id": "foret-env",   "label": "Forêt & environnement" },
+    { "id": "ocs",         "label": "Occupation du sol" }
+  ],
+
+  "products": [
+    // --- Découpage administratif ---------------------------------------------
+    {
+      "id": "ADMIN-EXPRESS", "title": "ADMIN EXPRESS", "theme": "admin", "producer": "ign",
+      "summary": "Découpage administratif vectoriel : communes, EPCI, cantons, départements, régions.",
+      "update": "Mensuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - ADMIN EXPRESS (v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADMIN EXPRESS (v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "ADMIN-EXPRESS-COG", "title": "ADMIN EXPRESS COG", "theme": "admin", "producer": "ign",
+      "summary": "ADMIN EXPRESS conforme au Code officiel géographique (COG) INSEE au 1er janvier.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - ADMIN EXPRESS COG (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADMIN EXPRESS COG (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "ADMIN-EXPRESS-COG-CARTO", "title": "ADMIN EXPRESS COG CARTO", "theme": "admin", "producer": "ign",
+      "summary": "ADMIN EXPRESS COG à géométrie généralisée, adaptée à la cartographie.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "ADMIN-EXPRESS-COG-CARTO-PE", "title": "ADMIN EXPRESS COG CARTO PE", "theme": "admin", "producer": "ign",
+      "summary": "ADMIN EXPRESS COG à géométrie généralisée, adaptée à la cartographie à petite échelle (« PE »).",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTO PE (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTO PE (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "ADMIN-EXPRESS-COG-CARTOPLUS", "title": "ADMIN EXPRESS COG CARTOPLUS", "theme": "admin", "producer": "ign",
+      "summary": "ADMIN EXPRESS COG à petite échelle avec DROM-COM repositionnés autour de la métropole pour la datavisualisation à petite échelle.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTOPLUS (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTOPLUS (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "CONTOURS-IRIS", "title": "Contours IRIS®", "theme": "admin", "producer": ["ign", "insee"],
+      "summary": "Contours des IRIS (INSEE) à moyenne échelle. Niveau intermédiaire entre IRIS GE et Contours IRIS PE.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - Contours IRIS® (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Contours IRIS® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "CONTOURS-IRIS-PE", "title": "Contours IRIS® PE", "theme": "admin", "producer": ["ign", "insee"],
+      "summary": "Contours des IRIS très généralisés, pour la cartographie statistique à petite échelle.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - Contours IRIS® PE (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Contours IRIS® PE (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "IRIS-GE", "title": "IRIS GE", "theme": "admin", "producer": ["ign", "insee"],
+      "summary": "Découpage IRIS à grande échelle, calé sur le parcellaire et le bâti.",
+      "update": "Annuelle (calée sur COG INSEE)",
+      "specs": [
+        { "label": "Descriptif de contenu - IRIS GE (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - IRIS GE (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "GEOFLA", "title": "GEOFLA®", "theme": "admin", "producer": "ign",
+      "retired": true,
+      "summary": "Ancien référentiel de découpage administratif (communes, cantons, départements).",
+      "update": "Remplacé par ADMIN EXPRESS",
+      "specs": [
+        { "label": "Descriptif de contenu - GEOFLA® (v2.2, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_GEOFLA_2-2.pdf", "type": "contenu" }
+      ]
+    },
+
+    // --- Référentiels topographiques ------------------------------------------
+    {
+      "id": "BDTOPO", "title": "BD TOPO®", "theme": "topo", "producer": "ign",
+      "summary": "Modélisation vectorielle 3D du territoire : bâti, réseaux, hydrographie, végétation. Précision métrique.",
+      "update": "Trimestrielle",
+      "specs": [
+        { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD TOPO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDTOPO-DIFF", "title": "BD TOPO® - Différentiel", "theme": "topo", "producer": "ign",
+      "summary": "Évolutions de la BD TOPO entre deux éditions, pour mettre à jour une base sans tout re-télécharger.",
+      "update": "Trimestrielle (suit la BD TOPO)",
+      "specs": [
+        { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD TOPO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDTOPO_EXPRESS", "title": "BD TOPO® Express", "theme": "topo", "producer": "ign",
+      "summary": "Édition hebdomadaire de la BD TOPO : même contenu, fraîcheur privilégiée, moins de contrôles.",
+      "update": "Hebdomadaire (chaque lundi)",
+      "specs": [
+        { "label": "Présentation du contenu - BD TOPO Express (PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/PC_BDTOPO_Express.pdf", "type": "fiche" },
+        { "label": "Descriptif de contenu - BD TOPO® Express (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD TOPO® Express (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDTOPOHisto", "title": "BD TOPO® Historique", "theme": "topo", "producer": "ign",
+      "summary": "Archives d'anciennes éditions de la BD TOPO (années 1990-2000), pour l'analyse d'évolution.",
+      "update": "Aucune. Archive d'anciennes éditions BD TOPO®",
+      "specs": [
+        { "label": "Descriptif de contenu - BD TOPO® Historique (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/Note_BDTOPO_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD TOPO® Historique (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDCARTO", "title": "BD CARTO®", "theme": "topo", "producer": "ign",
+      "summary": "Description vectorielle du territoire à moyenne échelle (1:50 000 à 1:250 000), précision décamétrique.",
+      "update": "Semestrielle",
+      "specs": [
+        { "label": "Descriptif de contenu - BD CARTO® (v5.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDCARTO_5-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD CARTO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDCARTO-EM", "title": "BD CARTO® État-major", "theme": "topo", "producer": "ign",
+      "summary": "Occupation du sol du XIXᵉ siècle vectorisée à partir des cartes d'état-major (1:40 000).",
+      "update": "Aucune. Archives vectorisées",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - BD CARTO® État-major (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_BDCARTO-EM_1-0.pdf", "type": "contenu" }
+      ]
+    },
+    {
+      "id": "BDFRANCE", "title": "BD FRANCE", "theme": "topo", "producer": "ign",
+      "summary": "Futur référentiel national grande échelle de l'IGN. Jeux tests sur départements pilotes (bêta).",
+      "update": "En développement (bêta)",
+      "specs": [
+        { "label": "Descriptif de contenu - BD FRANCE (bêta, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDFrance_Th%C3%A8meVeget_beta.pdf", "type": "contenu" }
+      ]
+    },
+    {
+      "id": "ROUTE500", "title": "ROUTE 500®", "theme": "topo", "producer": "ign",
+      "summary": "Réseau routier classé et éléments d'habillage pour la cartographie régionale à nationale (échelles du 1:200 000 au 1:5 000 000), dérivé de la BD CARTO®.",
+      "update": "Repli sur Transport BD TOPO®",
+      "retired": true,
+      "specs": [
+        { "label": "Descriptif de contenu - ROUTE 500® (PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ROUTE500.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ROUTE 500® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
+      ]
+    },
+    // {
+    //   "id": "EGM", "title": "EuroGlobalMap®", "theme": "topo", "producer": "ign",
+    //   "summary": "Base topographique paneuropéenne à petite échelle (1:1 000 000), volet français.",
+    //   "specs": [
+    //     { "label": "Fiche produit - Open Maps for Europe", "url": "https://www.mapsforeurope.org/datasets/euro-global-map" }
+    //   ]
+    // },
+
+    // --- Adresses -------------------------------------------------------------
+       {
+      "id": "BAN-PLUS", "title": "BAN PLUS", "theme": "adresse", "producer": "ign",
+      "summary": "Base Adresse Nationale enrichie des positions et rattachements IGN.",
+      "update": "en continu (quasi quotidien)",
+      "specs": [
+        { "label": "Descriptif de contenu - BAN PLUS (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BAN-PLUS_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BAN PLUS (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_BAN-PLUS_1-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "ADRESSE-PREMIUM", "title": "ADRESSE PREMIUM", "theme": "adresse", "producer": "ign",
+      "summary": "Référentiel d'adresses géolocalisées enrichi, croisant BAN, cadastre et référentiels IGN.",
+      "update": "Remplacé par BAN PLUS",
+      "retired": true,
+      "specs": [
+        { "label": "Descriptif de contenu - ADRESSE PREMIUM (v3.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADRESSE_PREMIUM_3-1.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - ADRESSE PREMIUM (v3.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADRESSE_PREMIUM_3-1.pdf", "type": "livraison" }
+      ]
+    },
+ 
+
+    // --- Parcellaire & cadastre ----------------------------------------------
+    {
+      "id": "PARCELLAIRE-EXPRESS", "title": "Parcellaire Express (PCI)", "theme": "parcellaire", "producer": "ign",
+      "summary": "Parcellaire cadastral vecteur issu du Plan Cadastral Informatisé de la DGFiP, mis à disposition par l'IGN.",
+      "update": "trimestriel (suit le PCI DGFiP)",
+      "specs": [
+        { "label": "Descriptif de contenu - Parcellaire Express (PCI) (v1.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Parcellaire_Express_(PCI)_1-1.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Parcellaire Express (PCI) (v1.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_Parcellaire_Express_(PCI)_1-1.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDPARCELLAIRE", "title": "BD PARCELLAIRE®", "theme": "parcellaire", "producer": "ign",
+      "summary": "Ancien assemblage du plan cadastral (raster et vecteur).",
+      "update": "Remplacé par Parcellaire Express",
+      "retired": true,
+      "specs": [
+        { "label": "Descriptif de contenu - BD PARCELLAIRE® (v1.2, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDPARCELLAIRE_1-2.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD PARCELLAIRE® (v1.2, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_BDPARCELLAIRE_1-2.pdf", "type": "livraison" }
+      ]
+    },
+    
+    // --- Imagerie aérienne & ortho -------------------------------------------
+    {
+      "id": "BDORTHO", "title": "BD ORTHO®", "theme": "imagerie", "producer": "ign",
+      "summary": "Mosaïque d'orthophotographies aériennes RVB et infrarouge (IRC), résolution 20 cm, 50 cm dans de rares cas, tout le territoire.",
+      "update": "Cyclique (~1/3 du territoire par an, couverture nationale ~3 ans)",
+      "specs": [
+        { "label": "Descriptif de contenu - BD ORTHO® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDORTHO_2-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD ORTHO® (produits ORTHO, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_ORTHO.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDORTHO-HISTORIQUE", "title": "BD ORTHO® Historique", "theme": "imagerie", "producer": "ign",
+      "summary": "Orthophotographies anciennes en niveaux de gris de 1945 à 1965, résolution 50 cm, pour l'analyse d'évolution.",
+      "update": "Aucune. Archive de prises de vue anciennes.",
+      "specs": [
+        { "label": "Descriptif de contenu - BD ORTHO® Historique (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDORTHOHisto_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD ORTHO® Historique (produits ORTHO, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_ORTHO.pdf", "type": "livraison" }
+      ]
+    },
+
+    // --- Altimétrie & relief --------------------------------------------------
+    {
+      "id": "RGEALTI", "title": "RGE ALTI®", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de terrain maillé au pas de 1 m et 5 m décrivant l'altitude du sol, issu de LiDAR, radar et corrélation d'images.",
+      "update": "Suspendue depuis 2024 (attente nouveau référentiel LiDAR HD)",
+      "specs": [
+        { "label": "Descriptif de contenu - RGE ALTI® (v2.0, PDF)",  "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_RGEALTI_2-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - RGE ALTI® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_RGEALTI_2-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "BDALTI", "title": "BD ALTI®", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de terrain à moyenne échelle (pas de 25 m, aussi 75 m), pour l'analyse du relief à l'échelle régionale.",
+      "update": "Suspendue depuis 2024 (attente nouveau référentiel LiDAR HD)",
+      "specs": [
+        { "label": "Descriptif de contenu - BD ALTI® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDALTI_2-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD ALTI® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_BDALTI_2-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "COURBES", "title": "Courbes de niveau", "theme": "altimetrie", "producer": "ign",
+      "summary": "Courbes de niveau vectorielles (équidistance 5 m) dérivées du RGE ALTI®.",
+      "update": "Suspendue depuis 2024 (attente nouveau référentiel LiDAR HD)",
+      "specs": [
+        { "label": "Descriptif de contenu - Courbes de niveau (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Courbes_de_niveau_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Courbes de niveau (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_Courbes_de_niveau_1-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "MNS-CORREL", "title": "MNS Corrélation", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de surface (sol et sursol), résolution 50 cm, par corrélation d'images aériennes.",
+      "update": "Cyclique (recalculé au fil des nouvelles prises de vue aériennes)",
+      "specs": [
+        { "label": "Descriptif de contenu - MNS Corrélation (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_MNS-Correl_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - MNS Corrélation (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_MNS-Correl_1-0.pdf", "type": "livraison" }
+      ]
+    },
+    // Modèles LiDAR HD : diffusés hors du service de téléchargement classique →
+    // entrées « page éditoriale » (champ « page »), non crawlées. Le contenu est
+    // rédigé en Markdown dans pages/ ; le build génère une page interne dédiée.
+    {
+      "id": "MNT-LIDARHD", "title": "MNT LiDAR HD", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de terrain (altitude du sol) issu du LiDAR HD, haute résolution.",
+      "update": "Programme national 2021-2026 (acquisition en cours)",
+      "page": "mnt-lidarhd.md"
+    },
+    {
+      "id": "MNS-LIDARHD", "title": "MNS LiDAR HD", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de surface (sol et sursol) issu du LiDAR HD, haute résolution.",
+      "update": "Programme national 2021-2026 (acquisition en cours)",
+      "page": "mns-lidarhd.md"
+    },
+    {
+      "id": "MNH-LIDARHD", "title": "MNH LiDAR HD", "theme": "altimetrie", "producer": "ign",
+      "summary": "Modèle numérique de hauteur (hauteur du sursol : végétation, bâti) dérivé du LiDAR HD.",
+      "update": "Programme national 2021-2026 (acquisition en cours)",
+      "page": "mnh-lidarhd.md"
+    },
+
+    // --- LiDAR & nuages de points --------------------------------------------
+    {
+      "id": "LiDARHD-NUALID", "title": "LiDAR HD - Nuage de points", "theme": "lidar", "producer": "ign",
+      "summary": "Nuages de points LiDAR HD classifiés, haute densité (≥ 10 pts/m²), format LAZ, dalles de 1 km.",
+      "update": "Programme national 2021-2026 (acquisition en cours)",
+      "specs": [
+        { "label": "Tutoriel pour extraire un morceau de la couverture LiDAR HD avec PDAL", "url": "https://gist.github.com/esgn/4bbf298ad76f4d72e9f3c133cbc96cf1", "type": "tutoriel" },
+        { "label": "Interface cartographique de téléchargement à la dalle du produit LiDAR HD", "url":"https://cartes.gouv.fr/telechargement/IGNF_NUAGES-DE-POINTS-LIDAR-HD", "type": "interface" },
+        { "label": "Descriptif de contenu - LiDAR HD (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_LiDAR_HD_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - LiDAR HD (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_LiDAR_HD_1-0.pdf", "type": "livraison" }
+      ],
+      "include": true
+    },
+    {
+      "id": "NUALID", "title": "NUALID - Nuages de points LiDAR (hors LiDAR HD)", "theme": "lidar", "producer": "ign",
+      "summary": "Acquisitions LiDAR hors programme LiDAR HD pour le constitution du RGE ALTI®. Densités variables",
+      "update": "Aucune. Archive acquisitions LIDAR hors LiDAR HD (2006-2020)",
+      "specs": [
+        { "label": "Carte montrant les zones téléchargeables ici parmi celles existantes", "url": "https://macarte.ign.fr/carte/f730c45423c18cc8ec6da059d77e618d/NUALID-Visualisation", "type": "carte" },
+        { "label": "Descriptif de contenu - NUALID (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_NUALID_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - NUALID (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_NUALID_1-0.pdf", "type": "livraison" }
+      ]
+    },
+
+    // --- Occupation du sol ----------------------------------------------------
+    {
+      "id": "OCSGE", "title": "OCS GE", "theme": "ocs", "producer": "ign",
+      "summary": "Occupation du sol vectorielle à grande échelle (couverture et usage). Millésimes et différentiels disponibles",
+      "update": "Tous les ~3 ans",
+      "specs": [
+        { "label": "Descriptif de contenu - OCS GE (Nouvelle Génération, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_OCSGE_NG.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - OCS GE (Nouvelle Génération, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_OCSGE_NG.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "OCSGE-ARTIFICIALISATION", "title": "OCS GE - Artificialisation", "theme": "ocs", "producer": "ign",
+      "summary": "Millésimes d'artificialisation dérivés de l'OCS GE, pour le suivi du « zéro artificialisation nette » (ZAN).",
+      "update": "Tous les ~3 ans (dérivé de l'OCS GE)",
+      "specs": [
+        { "label": "Fiche produit - portail Artificialisation", "url": "https://artificialisation.developpement-durable.gouv.fr/bases-donnees/ocs-ge", "type": "fiche" }
+      ]
+    },
+    {
+      "id": "OCSGE-PV", "title": "OCS GE - Panneaux photovoltaïques", "theme": "ocs", "producer": "ign",
+      "summary": "Emprises des panneaux photovoltaïques au sol, détectées par IA et dérivées de l'OCS GE.",
+      "update": "Tous les ~3 ans (dérivé de l'OCS GE)",
+      "specs": [
+        { "label": "Descriptif de contenu - OCS GE - Panneaux photovoltaïques (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_PVsol_1-0.pdf", "type": "contenu" },
+        { "label": "Présentation - OCS GE - Panneaux photovoltaïques (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/PRES_PVsol_1-0.pdf", "type": "fiche" }
+      ]
+    },
+    {
+      "id": "COSIA", "title": "CoSIA", "theme": "ocs", "producer": "ign",
+      "summary": "Vectorisation des cartes de couverture du sol prédite par IA.",
+      "update": "Cyclique (à chaque nouveau millésime de BD ORTHO®)",
+      "specs": [
+        { "label": "Descriptif de contenu - CoSIA (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_CoSIA_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - CoSIA (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_CoSIA_1-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "CORINELANDCOVER", "title": "CORINE Land Cover", "theme": "ocs", "producer": ["sdes", "ign"],
+      "summary": "Inventaire biophysique européen d'occupation des sols, harmonisé, à petite échelle (unité minimale 25 ha).",
+      "update": "Tous les ~6 ans (programme européen Copernicus)",
+      "specs": [
+        { "label": "Guide d'utilisation (SDES, PDF)", "url": "https://www.statistiques.developpement-durable.gouv.fr/sites/default/files/2018-12/clc-guide-d-utilisation-02_0.pdf", "type": "guide" }
+      ]
+    },
+    {
+      "id": "RPG", "title": "Registre Parcellaire Graphique (RPG)", "theme": "ocs", "producer": "ign",
+      "summary": "Parcelles culturales déclarées à la PAC et leur groupe de cultures (occupation agricole, non cadastrale).",
+      "update": "Annuelle (données de l'année N diffusées en N+2)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_RPG_3-0.pdf", "type": "contenu" }
+      ]
+    },
+
+    // --- Forêt & environnement -----------------------------------------------
+    {
+      "id": "BDFORET", "title": "BD FORÊT® V1 et V2", "theme": "foret-env", "producer": "ign",
+      "summary": "Cartographie des formations forestières (peuplement, essence, densité), unité minimale 0,5 ha.",
+      "update": "Aucune. Version 3 en préparation",
+      "specs": [
+        { "label": "Descriptif de contenu - BD FORÊT® V2 (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDForet_2-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD FORÊT® V2 (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_BDForet_2-0.pdf", "type": "livraison" },
+        { "label": "Descriptif de contenu - BD FORÊT® V1 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDForet_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - BD FORÊT® V1 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_BDForet_1-0.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "FORETS-ANCIENNES", "title": "Forêts anciennes", "theme": "foret-env", "producer": ["inrae", "ign"],
+      "summary": "Forêts présumées anciennes (boisées depuis le XIXᵉ s.), par croisement état-major × BD FORÊT®.",
+      "update": "Aucune actualisation régulière prévue.",
+      "specs": [
+        { "label": "Descriptif de contenu - Forêts anciennes (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_For%C3%AAts_anciennes.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Forêts anciennes (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_For%C3%AAts_anciennes.pdf", "type": "livraison" }
+
+      ]
+    },
+
+    // --- Cartes & SCAN --------------------------------------------------------
+    {
+      "id": "PLANIGN", "title": "Plan IGN", "theme": "cartes", "producer": "ign",
+      "summary": "Représentation cartographique vectorielle multi-échelles produite par l'IGN. Métropole et DROM-COM.",
+      "update": "Annuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - Plan IGN (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Plan_IGN.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Plan IGN (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_Plan_IGN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCAN50", "title": "SCAN 50® Mayotte", "theme": "cartes", "producer": "ign",
+      "summary": "SCAN 50® - carte topographique raster au 1:50 000 couvrant Mayotte.",
+      "update": "Ponctuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN 50® Mayotte (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCAN50_MYT_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN 50® Mayotte (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCAN500", "title": "SCAN 500® Guyane", "theme": "cartes", "producer": "ign",
+      "summary": "SCAN 500® - carte routière et touristique raster au 1:500 000 couvrant la Guyane.",
+      "update": "Ponctuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN 500® Guyane (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCAN500_GUF_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN 500® Guyane (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCANREG", "title": "SCAN Régional®", "theme": "cartes", "producer": "ign",
+      "summary": "Cartographie raster à l'échelle régionale (~1:250 000). Métropole et Corse.",
+      "update": "Annuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN Régional® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCANREG_2-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN Régional® (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCAN1000", "title": "SCAN 1000®", "theme": "cartes", "producer": "ign",
+      "summary": "Cartographie raster à petite échelle (~1:1 000 000), Métropole et Corse.",
+      "update": "Annuelle",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN 1000® (v2.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCAN1000_2-1.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN 1000® (v2.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCAN50-HISTORIQUE", "title": "SCAN 50® Historique", "theme": "cartes", "producer": "ign",
+      "summary": "Cartes topographiques au 1:50 000 des années 1950, numérisées. Métropole et DROM-COM.",
+      "update": "Aucune. Archive cartographique historique (années 1950)",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN 50® Historique (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCAN50_Historique_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN 50® Historique (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCANEM10K", "title": "SCAN État-major® au 1:10 000", "theme": "cartes", "producer": "ign",
+      "summary": "Numérisation de la carte de l'état-major (XIXᵉ s.) au 1:10 000, géoréférencée. Métropole.",
+      "update": "Aucune. Archive cartographique historique (XIXᵉ s.)",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN État-major® au 1:10 000 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCANEM_10K_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN État-major® au 1:10 000 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      "id": "SCANEM40K", "title": "SCAN État-major® au 1:40 000", "theme": "cartes", "producer": "ign",
+      "summary": "Numérisation de la carte de l'état-major (XIXᵉ s.) au 1:40 000, géoréférencée. Métropole.",
+      "update": "Aucune. Archive cartographique historique (XIXᵉ s.)",
+      "specs": [
+        { "label": "Descriptif de contenu - SCAN État-major® au 1:40 000 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCANEM_40K_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - SCAN État-major® au 1:40 000 (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    },
+    {
+      // Famille de fonds anciens (état-major, Cassini…) sans descriptif unique publié.
+      "id": "cartes_anciennes", "title": "Cartes anciennes", "theme": "cartes", "producer": "ign",
+      "summary": "Fonds de cartes anciennes numérisés (Cadastre napoléonien, cartes de l'état-major, Cassini…). Métropole et DROM-COM.",
+      "update": "Aucune. Archives cartographiques anciennes.",
+      "specs": [
+        { "label": "Descriptif de contenu - Scan Etat Major 40k (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_SCANEM_40K_1-0.pdf", "type": "contenu" },
+        { "label": "Descriptif de livraison - Scan (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_raster_SCAN.pdf", "type": "livraison" }
+      ]
+    }
+  ]
+}

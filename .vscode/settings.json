@@ -1,0 +1,8 @@
+{
+  // catalogue.json tolère les commentaires « // » et les virgules finales
+  // (cf. gpf/catalogue.py:strip_json_comments). On l'associe à JSONC pour que
+  // l'éditeur ne les signale pas comme des erreurs.
+  "files.associations": {
+    "catalogue.json": "jsonc"
+  }
+}

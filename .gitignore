@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.DS_Store
+
+# Artefacts générés (le site est régénéré à chaque build / déployé par le CI)
+site/
+manifest.json
+
+# Fichiers de configuration IA
+.claude
+.codex
+.agents
+
+# Sauvegarde de l'ancien dépôt git (repartir d'un historique vierge)
+.git.backup/
+*.git.backup
