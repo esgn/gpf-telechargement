@@ -2,7 +2,7 @@ name: build-index
 
 on:
   schedule:
-    # Tous les jours à 04:00 UTC : rebuild complet du site.
+    # Tous les jours à 02:00 UTC : rebuild complet du site.
     - cron: "0 2 * * *"
   workflow_dispatch: {}
 
@@ -33,7 +33,7 @@ jobs:
         run: python build.py --check || true
 
       - name: Générer le site (rebuild complet)
-        run: python build.py --out site --only ADMIN-EXPRESS
+        run: python build.py --out site
 
       - uses: actions/upload-pages-artifact@v3
         with:
