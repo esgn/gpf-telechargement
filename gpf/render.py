@@ -237,6 +237,23 @@ footer .repo-link:hover { color:var(--fg); }
   :root:not([data-theme="light"]) #theme-toggle::after  { left:calc(100% - 1.7rem); content:"🌙"; }
 }
 
+/* Sur mobile/tablette portrait, le bouton fixé (position:fixed) à la fenêtre
+   chevauchait tout contenu atteignant le coin haut-droit (titre, fil d'Ariane, liens
+   de spécifications, listing) et interceptait leurs clics. On le sort du fixed : il
+   revient dans le flux, en tête de <body>, en float:right — le fil d'Ariane et le
+   contenu s'enroulent donc à sa gauche (au lieu de couler dessous), sans vide au-dessus.
+   Étant dans le flux, il défile avec la page (comportement mobile voulu, pas d'élément
+   flottant qui gênerait plus bas). position:relative (et non le fixed neutralisé) pour
+   que la poignée/icône (::before/::after en absolute) restent calées sur le bouton.
+   footer { clear:both } : sur une page courte, le bas du float peut dépasser le contenu ;
+   sans clear, le filet du pied de page s'enroulerait autour du bouton au lieu de partir
+   pleine largeur. */
+@media (max-width:768px) {
+  #theme-toggle { position:relative; float:right; top:0; right:0;
+                  margin:0 0 .3rem .6rem; }
+  footer { clear:both; }
+}
+
 @media (max-width:600px) {
   .scroll { overflow-x:auto; }
   h1 { font-size:1.4rem; }
