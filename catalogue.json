@@ -35,7 +35,9 @@
     { "id": "ign", "name": "IGN", "logo": "logos/ign.svg" },
     { "id": "insee", "name": "INSEE", "logo": "logos/insee.svg" },
     { "id": "sdes", "name": "SDES", "logo": "logos/sdes.svg" },
-    { "id": "inrae", "name": "INRAE", "logo": "logos/inrae.svg" }
+    { "id": "inrae", "name": "INRAE", "logo": "logos/inrae.svg" },
+    { "id": "ofb", "name": "OFB", "logo": "logos/ofb.svg" },
+    { "id": "inpn", "name": "INPN", "logo": "logos/inpn.svg" }
   ],
 
   // Thèmes dans l'ordre d'affichage. Un produit sans thème (ou thème inconnu)
@@ -318,6 +320,21 @@
         { "label": "Descriptif de livraison - MNS Corrélation (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_MNS-Correl_1-0.pdf", "type": "livraison" }
       ]
     },
+    {
+      "id": "IGNF_FRANCE-RELIEF", "title": "France RELIEF", "theme": "altimetrie", "producer": "ign",
+      "summary": "Nouvelle offre altimétrique de l'IGN (nuages de points sol, MNT et MNS), issue du LiDAR et de la corrélation d'images. Vocation à remplacer le RGE ALTI®.",
+      "update": "En déploiement (expérimentation Isère 2025)",
+      "specs": [
+        { "label": "Documentation - France RELIEF, expérimentation Isère 2025 (PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/Documentation_experimentation_France_RELIEF_2025.pdf", "type": "contenu" }
+      ],
+      "include": false
+    },
+    {
+      "id": "France-RELIEF_beta", "title": "France RELIEF (bêta)", "theme": "altimetrie", "producer": "ign",
+      "summary": "Jeux de test bêta de France RELIEF : nuages de points LiDAR (LAZ) sur départements pilotes, en amont du déploiement national.",
+      "update": "En développement (bêta)",
+      "include": false
+    },
     // Modèles LiDAR HD : diffusés hors du service de téléchargement classique →
     // entrées « page éditoriale » (champ « page »), non crawlées. Le contenu est
     // rédigé en Markdown dans pages/ ; le build génère une page interne dédiée.
@@ -416,6 +433,30 @@
         { "label": "Descriptif de contenu et de livraison (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_RPG_3-0.pdf", "type": "contenu" }
       ]
     },
+    {
+      "id": "CARHAB", "title": "CarHab", "theme": "ocs", "producer": ["inpn", "ign"],
+      "summary": "Cartographie nationale des habitats naturels et semi-naturels de France métropolitaine, produite dans le cadre du programme CarHab (OFB, MNHN, IGN, Réseau des CBN).",
+      "update": "Programme national en cours",
+      "specs": [
+        { "label": "Notice CarHab - Programme de cartographie nationale des habitats (HAL, PDF)", "url": "https://hal.science/hal-05456928v2/document", "type": "fiche" }
+      ]
+    },
+    {
+      "id": "NATURE-EN-VILLE", "title": "Nature en Ville", "theme": "ocs", "producer": "ign",
+      "summary": "Végétation et surfaces d'eau en milieu urbain (couvert arboré, pelouses), dérivée de CoSIA sur les communes denses. Métropole et DROM.",
+      "update": "Ponctuelle (v1.0, millésime CoSIA 2021-2023)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - Nature en Ville (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_Nature_en_Ville_1-0.pdf", "type": "contenu" }
+      ]
+    },
+    {
+      "id": "PARCS.JARDINS", "title": "Parcs et jardins publics", "theme": "ocs", "producer": "ign",
+      "summary": "Parcs, jardins et squares publics (espaces verts aménagés accessibles au public), pour le suivi de l'artificialisation des sols.",
+      "update": "Ponctuelle (v1.0, 2025)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - Parcs et jardins publics (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_PJP_1-0.pdf", "type": "contenu" }
+      ]
+    },
 
     // --- Forêt & environnement -----------------------------------------------
     {
@@ -437,6 +478,31 @@
         { "label": "Descriptif de contenu - Forêts anciennes (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_For%C3%AAts_anciennes.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - Forêts anciennes (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_For%C3%AAts_anciennes.pdf", "type": "livraison" }
 
+      ]
+    },
+    {
+      "id": "BD-HAIE", "title": "BD HAIE V1 et V2", "theme": "foret-env", "producer": ["ofb", "ign"],
+      "summary": "Couche nationale de référence du linéaire de haies en France métropolitaine. Dérivée de la BD TOPO® (thème végétation) et du RPG.",
+      "update": "Ponctuelle (v1 2020, v2 2024)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - BD HAIE (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/Descriptif_de_contenu_et_limite_DSB.pdf", "type": "contenu" },
+        { "label": "Descriptif de contenu et de livraison - BD HAIE (v2.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/Descriptif_de_contenu_et_limite_DSB_v2.pdf", "type": "contenu" }
+      ]
+    },
+    {
+      "id": "IGNF_MASQUE-FORET", "title": "Masque Forêt", "theme": "foret-env", "producer": "ign",
+      "summary": "Masque vectoriel des surfaces boisées (définition FAO de la forêt), issu de la BD ORTHO®. Définit le périmètre de la BD FORÊT® v3.",
+      "update": "Ponctuelle (v1 2025)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - Masque Forêt (v1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_Masque_Foret_v1.pdf", "type": "contenu" }
+      ]
+    },
+    {
+      "id": "DEBROUSSAILLEMENT", "title": "Débroussaillement", "theme": "foret-env", "producer": "ign",
+      "summary": "Zonage informatif des obligations légales de débroussaillement (OLD), pour la prévention du risque incendie de forêt.",
+      "update": "Ponctuelle (v7.0, révision mars 2026)",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - Débroussaillement (v7.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_DEBROUSSAILLEMENT.pdf", "type": "contenu" }
       ]
     },
 
