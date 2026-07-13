@@ -83,6 +83,13 @@ nav.crumbs span[aria-current] { color:var(--fg); }
 /* Pas de max-width ici : le chapô suit la largeur du contenu (body, 64rem), aligné
    avec les cartes et le pied de page — plutôt qu'un bloc plus étroit isolé. */
 p.lead { color:var(--muted); font-size:1.05rem; }
+/* Sommaire de thèmes (accueil) : puces compactes qui défilent vers la section
+   correspondante (liens #ancre, même page). Discret, ne pousse pas les cartes trop bas. */
+nav.theme-nav { display:flex; flex-wrap:wrap; gap:.4rem .5rem; margin:1.1rem 0 1.8rem; }
+nav.theme-nav a { font-size:.85rem; color:var(--muted); text-decoration:none;
+                  padding:.2rem .6rem; border:1px solid var(--border);
+                  border-radius:999px; background:var(--row); white-space:nowrap; }
+nav.theme-nav a:hover { color:var(--link); border-color:var(--accent); }
 /* Bandeau « produit arrêté » en tête de fiche : même palette ambrée que les cartes. */
 p.retired-banner { max-width:46rem; margin:.6rem 0; padding:.6rem .85rem;
                    font-size:.95rem; color:var(--fg);
@@ -489,6 +496,12 @@ def home_body(sections: list[dict], *, site_title: str, intro: str,
     out = [f"<h1>{esc(site_title)}</h1>"]
     if intro:
         out.append(f'<p class="lead">{esc(intro)}</p>')
+    # Sommaire de thèmes : liens #ancre vers chaque section de CETTE page (les <h2>
+    # portent déjà l'id du thème). Distinct du titre de section, qui mène à la page thème.
+    if len(sections) > 1:
+        links = "".join(f'<a href="#{esc(sec["id"])}">{esc(sec["label"])}</a>'
+                         for sec in sections)
+        out.append(f'<nav class="theme-nav" aria-label="Thèmes">{links}</nav>')
     for sec in sections:
         out.append(
             f'<section class="theme"><h2 id="{esc(sec["id"])}">'
