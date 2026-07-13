@@ -17,7 +17,7 @@ vers `data.geopf.fr`. C'est un index navigable, plus lisible que le service brut
 
 ## Comment ça marche
 
-L'API de téléchargement de la Géoplateforme expose une hiérarchie Atom à 3 niveaux :
+L'API de téléchargement de la Géoplateforme expose une hiérarchie [Atom](https://www.ietf.org/rfc/rfc4287.txt) à 3 niveaux :
 
 | Niveau | URL | Contenu |
 |---|---|---|
@@ -29,7 +29,7 @@ L'API de téléchargement de la Géoplateforme expose une hiérarchie Atom à 3 
 et reconstruit une arborescence de dossiers, chacun avec un `index.html`.
 
 **Point clé** : l'API ne fournit que peu de métadonnées éditoriales (pas de
-description courte, ni de thème, ni de lien vers les spécifications). Tout cela est
+description courte, ni de thème, ni de lien vers les spécifications, etc.). Tout cela est
 maintenu dans [`catalogue.json`](catalogue.json) et joint au crawl via l'`id` de ressource.
 
 Trois aménagements du listing :
@@ -43,8 +43,8 @@ Trois aménagements du listing :
 
 ```bash
 python build.py                        # rebuild complet dans ./site
-python build.py --only ADMIN-EXPRESS   # ne construire qu'un produit (test)
-python build.py --only-theme admin     # ne construire qu'un thème (test)
+python build.py --only ADMIN-EXPRESS   # ne construire qu'un produit (pour test)
+python build.py --only-theme admin     # ne construire qu'un thème (pour test)
 python build.py --check                # dérive catalogue ↔ API (ne construit rien)
 python -m unittest                     # tests des fonctions pures (sans réseau)
 ```
@@ -61,14 +61,14 @@ python3 -m http.server 8000 --directory site   # puis http://localhost:8000/
 
 ### Options
 
-| Option | Effet |
-|---|---|
-| `--out DIR` | dossier de sortie (défaut `site`) |
-| `--catalogue FILE` | fichier catalogue (défaut `catalogue.json`) |
-| `--only ID` | ne construire qu'un produit (test ; ne purge pas le reste) |
-| `--only-theme THEME` | ne construire qu'un thème, par `id` (test ; ne purge pas le reste ; exclusif avec `--only`) |
-| `--check` | rapport de dérive catalogue ↔ API, sans rien construire |
-| `--requests-per-second N` | débit visé (défaut 10 ; la limite API est ≤ 10) |
+| Option                    | Effet                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------- |
+| `--out DIR`               | dossier de sortie (défaut `site`)                                                            |
+| `--catalogue FILE`        | fichier catalogue (défaut `catalogue.json`)                                                  |
+| `--only ID`               | ne construire qu'un produit (test ; ne purge pas le reste)                                   |
+| `--only-theme THEME`      | ne construire qu'un thème, par `id` (test ; ne purge pas le reste ; exclusif avec `--only`)  |
+| `--check`                 | rapport de dérive catalogue ↔ API, sans rien construire                                      |
+| `--requests-per-second N` | débit visé (défaut 10 ; la limite API est ≤ 10)                                              |
 
 ## Gérer les produits — [`catalogue.json`](catalogue.json)
 
@@ -81,19 +81,19 @@ finales** (pour rester éditable à la main). Trois blocs :
 
 Champs d'un produit :
 
-| Champ | Oblig. | Rôle |
-|---|---|---|
-| `id` | ✅ | Nom **exact** de la ressource dans `…/resource/{id}` — clé de jointure avec l'API. |
-| `title` | — | Titre affiché (repli sur le titre Atom). |
-| `theme` | — | `id` d'un thème déclaré. Vide ou inconnu → « Autres jeux de données ». |
-| `summary` | — | Résumé éditorial (1-2 phrases, public technique). |
-| `update` | — | Rythme de mise à jour, **texte libre** (`mensuel`, `annuel`…). Affiché sur la carte ; vide → ligne masquée. Pour un produit arrêté, y mettre le motif (ex. `Remplacé par ADMIN EXPRESS`) : il est repris dans le bandeau de la fiche. |
-| `producer` | — | `id` d'un producteur déclaré dans `producers` (voir ci-dessous). Vide → aucun badge. |
-| `specs` | — | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 🔗, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️. Type absent → 📄 ; type inconnu → 📄 + avertissement au build. |
-| `include` | — | `false` pour masquer un produit sans le supprimer (défaut `true`). |
-| `retired` | — | `true` pour un **produit arrêté** (plus maintenu, souvent remplacé) : reste publié et affiché en ligne, mais sa carte est ambrée avec un badge « Arrêté » et sa fiche porte un bandeau. Défaut `false`. À ne pas confondre avec les **archives** (données anciennes toujours utiles), qui restent des produits normaux. |
-| `order` | — | Ordre d'affichage intra-thème, croissant (défaut 100). À `order` égal, l'**ordre du catalogue** est conservé (tri stable) : sans `order` explicite, les produits s'affichent donc dans leur ordre de déclaration dans `catalogue.json`. |
-| `page` | — | Nom d'un fichier Markdown dans [`pages/`](pages/) (ex. `mnt-lidarhd.md`). Si renseigné, l'entrée est une **page éditoriale** (contenu rédigé, non crawlé) au lieu d'un produit de l'API : sa fiche est générée depuis ce Markdown, et `--check` l'ignore. |
+| Champ      | Oblig. | Rôle                                                                                                                                                                                                                                                                                                                    |
+| ---------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`       | ✅     | Nom **exact** de la ressource dans `…/resource/{id}` — clé de jointure avec l'API.                                                                                                                                                                                                                                      |
+| `title`    | —      | Titre affiché (repli sur le titre Atom).                                                                                                                                                                                                                                                                                |
+| `theme`    | —      | `id` d'un thème déclaré. Vide ou inconnu → « Autres jeux de données ».                                                                                                                                                                                                                                                  |
+| `summary`  | —      | Résumé éditorial (1-2 phrases, public technique).                                                                                                                                                                                                                                                                       |
+| `update`   | —      | Rythme de mise à jour, **texte libre** (`mensuel`, `annuel`…). Affiché sur la carte ; vide → ligne masquée. Pour un produit arrêté, y mettre le motif (ex. `Remplacé par ADMIN EXPRESS`) : il est repris dans le bandeau de la fiche.                                                                                   |
+| `producer` | —      | `id` d'un producteur déclaré dans `producers` (voir ci-dessous). Vide → aucun badge.                                                                                                                                                                                                                                    |
+| `specs`    | —      | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 🔗, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️. Type absent → 📄 ; type inconnu → 📄 + avertissement au build.                                       |
+| `include`  | —      | `false` pour masquer un produit sans le supprimer (défaut `true`).                                                                                                                                                                                                                                                      |
+| `retired`  | —      | `true` pour un **produit arrêté** (plus maintenu, souvent remplacé) : reste publié et affiché en ligne, mais sa carte est ambrée avec un badge « Arrêté » et sa fiche porte un bandeau. Défaut `false`. À ne pas confondre avec les **archives** (données anciennes toujours utiles), qui restent des produits normaux. |
+| `order`    | —      | Ordre d'affichage intra-thème, croissant (défaut 100). À `order` égal, l'**ordre du catalogue** est conservé (tri stable) : sans `order` explicite, les produits s'affichent donc dans leur ordre de déclaration dans `catalogue.json`.                                                                                 |
+| `page`     | —      | Nom d'un fichier Markdown dans [`pages/`](pages/) (ex. `mnt-lidarhd.md`). Si renseigné, l'entrée est une **page éditoriale** (contenu rédigé, non crawlé) au lieu d'un produit de l'API : sa fiche est générée depuis ce Markdown, et `--check` l'ignore.                                                               |
 
 ### Producteurs (logo / nom sur les cartes)
 
@@ -115,11 +115,11 @@ liste** (coédition — les logos sont juxtaposés dans l'ordre déclaré) :
 ]
 ```
 
-| Champ producteur | Oblig. | Rôle |
-|---|---|---|
-| `id` | ✅ | Référencé par le champ `producer` des produits. |
-| `name` | ✅ | Nom affiché (et `alt` du logo). |
-| `logo` | — | Chemin **relatif au dossier [`assets/`](assets/)**, ex. `logos/ign.svg`. Sans logo → nom en texte. |
+| Champ producteur | Oblig. | Rôle                                                                                               |
+| ---------------- | ------ | -------------------------------------------------------------------------------------------------- |
+| `id`             | ✅     | Référencé par le champ `producer` des produits.                                                    |
+| `name`           | ✅     | Nom affiché (et `alt` du logo).                                                                    |
+| `logo`           | —      | Chemin **relatif au dossier [`assets/`](assets/)**, ex. `logos/ign.svg`. Sans logo → nom en texte. |
 
 Les fichiers logo vivent dans `assets/` (typiquement `assets/logos/`) et sont
 **copiés tels quels** vers `site/assets/` à chaque build. Aucun asset externe :
@@ -132,22 +132,21 @@ vérifié) ; laissé vide, aucun badge.
 1. `python build.py --check` liste les ressources de l'API absentes du catalogue.
 2. Ajoutez une entrée `products` avec le bon `id`, un `theme`, un `summary`.
 3. Renseignez `specs` avec les liens PDF officiels. Utilisez le host **durable**
-   `https://data.geopf.fr/annexes/ressources/documentation/…`
-   (⚠️ `geoservices.ign.fr` ferme le 2026-03-26).
-4. `python build.py --only <ID>` pour vérifier le rendu du produit.
+   `https://data.geopf.fr/annexes/ressources/documentation/…` et non `geoservices.ign.fr` désormais fermé.
+4. `python build.py --only <id>` pour vérifier le rendu du produit.
 
 ### Documents de spécification
 
 Ce sont des **liens** vers les descriptifs de contenu / de livraison publiés par
 l'IGN (on ne réhéberge rien). Les millésimes figurent dans les noms de fichiers
 PDF (`DC_BDTOPO_3-5.pdf`…) : ils sont à mettre à jour à la main quand l'IGN publie
-une nouvelle version — l'API ne fournit pas ces liens.
+une nouvelle version — l'API de téléchargement ne fournit pas ces liens.
 
 ## Mise à jour automatique (GitHub Pages)
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) régénère et publie
 le site : un step `--check` signale la dérive du catalogue, puis génère le site et
-déploie sur Pages (cron quotidien + déclenchement manuel). Rien n'est committé.
+déploie sur Pages (cron quotidien + déclenchement manuel). Rien n'est committé dans ce dépôt.
 
 Dans **Settings → Pages**, choisir **Source : GitHub Actions**.
 
@@ -155,7 +154,7 @@ Dans **Settings → Pages**, choisir **Source : GitHub Actions**.
 
 ```
 build.py            CLI + orchestration (jointure catalogue×live, pages, copie assets)
-catalogue.json      métadonnées éditoriales des produits (édité à la main)
+catalogue.json      métadonnées éditoriales des produits (éditées à la main)
 RULES.md            règles d'affichage appliquées à tous les produits (doc lisible)
 assets/             statiques copiés tels quels vers site/assets (logos producteurs…)
 pages/              sources Markdown des pages éditoriales (converties au build, non copiées)
@@ -182,7 +181,12 @@ sont déclarées dans [`gpf/rules.py`](gpf/rules.py) et décrites en clair dans
 
 - Chaque build re-crawle l'intégralité des produits inclus (pas de cache) : simple
   et toujours à jour, mais coûteux sur les gros jeux. Les ressources très
-  volumineuses (dalles LiDAR HD complètes, prises de vue aériennes) sont exclues
-  par défaut (`include: false`) ou plafonnées par `max_entries`.
+  volumineuses (dalles LiDAR HD complètes, prises de vue aériennes) peuvent prendre beaucoup de temps à indexer.
 - Données diffusées sous les conditions de la Géoplateforme ; ce dépôt n'indexe
   que des liens publics et ne redistribue aucune donnée.
+
+  ## Reste à faire
+
+  - [ ] Ajouter PVA
+  - [ ] Ajouter documents d'urbanisme
+ 

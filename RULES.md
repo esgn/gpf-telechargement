@@ -178,6 +178,15 @@ page de renvoi pointe vers le flux de téléchargement. Le défaut du code est 0
 à 50000 : le garde-fou est donc actif en pratique.
 → [`crawl.py`](gpf/crawl.py) `build_dir`.
 
+### 4.4 — Doublons de ressources API : on garde la plus complète
+Quand l'API expose deux ressources qui décrivent le même produit, on ne référence
+dans le catalogue que la **plus complète** ; l'autre est laissée hors catalogue (elle
+apparaît alors dans `build.py --check` comme « nouvelle », ce qui est normal).
+Cas connu : `cartes_anciennes` (5 séries : Cadastre napoléonien, Cassini, État-major,
+Série verte 100K, Série 50K) **contient** `cartes` (mêmes séries **sans** le Cadastre
+napoléonien). On garde donc `cartes_anciennes` et on ignore `cartes`.
+→ décision éditoriale dans [`catalogue.json`](catalogue.json) (aucun code dédié).
+
 ---
 
 ## 5. Présentation & formatage
