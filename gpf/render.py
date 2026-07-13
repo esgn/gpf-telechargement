@@ -241,6 +241,52 @@ footer .repo-link:hover { color:var(--fg); }
   .scroll { overflow-x:auto; }
   h1 { font-size:1.4rem; }
 }
+
+/* Listing en « cartes empilées » sur mobile/tablette portrait. Sous ce seuil, le
+   tableau à 4 colonnes est illisible : le nom se compresse et le hash MD5 (32 car.,
+   non cassable) pousse la page en largeur. On délinéarise donc chaque <tr> en bloc
+   vertical — nom en pleine largeur, méta condensée en dessous, MD5 masqué — sans
+   toucher au HTML sémantique (table conservée). Au-dessus de 768px : rendu tableau
+   d'origine, strictement inchangé. Les td portent un data-label (posé côté HTML par
+   listing_table) dont le CSS ci-dessous se sert pour réétiqueter les cellules ; cet
+   attribut est invisible tant que ces règles ne s'appliquent pas (donc nul sur desktop). */
+@media (max-width:768px) {
+  /* Le conteneur .scroll ne sert plus (pas de débordement en mode carte). */
+  .scroll { overflow-x:visible; }
+  table.listing, .listing tbody, .listing tr, .listing td { display:block; width:100%; }
+  /* En-tête de colonnes sans objet en mode carte : retiré du flux mais gardé pour
+     les lecteurs d'écran (position hors écran plutôt que display:none). */
+  .listing thead { position:absolute; width:1px; height:1px; overflow:hidden;
+                   clip:rect(0 0 0 0); white-space:nowrap; }
+  .listing tr { padding:.7rem .1rem; }
+  .listing tbody tr:hover { background:transparent; }
+  /* Ligne 1 — le NOM, pleine largeur, priorité de lecture. La règle générale
+     .listing td (border-bottom, padding) est neutralisée cellule par cellule. */
+  .listing td { border:0; padding:0; }
+  .listing td:first-child { padding-bottom:.3rem; font-size:1rem; }
+  /* Cible tactile confortable sur le lien du nom. */
+  .listing td:first-child a { display:inline-block; font-weight:500;
+                              min-height:1.6rem; padding:.15rem 0; }
+  /* Lignes méta — date puis taille (ordre DOM), en petit et muted, sur une même ligne.
+     Réétiquetées via data-label ; alignées à gauche, contrairement au tableau. Une
+     cellule vide (taille absente d'un dossier) est retirée pour ne pas afficher un
+     libellé « Taille : » orphelin. */
+  .listing td[data-label] {
+    display:inline; font-size:.85rem; color:var(--muted);
+    text-align:left; white-space:normal;
+  }
+  .listing td[data-label]:empty { display:none; }
+  .listing td[data-label]::before { content:attr(data-label) " : "; }
+  /* Séparateur « · » posé AVANT la taille pour la détacher de la date qui la précède.
+     :not(:empty) → pas de séparateur en tête si la taille manque (dossier). */
+  .listing td.num:not(:empty)::before {
+    content:" · " attr(data-label) " : "; color:var(--muted);
+  }
+  /* MD5 — coupable n°1 du débordement (hash de 32 car. non cassable). Rarement
+     consulté depuis un mobile ; on le masque simplement sous ce seuil. Le hash reste
+     présent dans le HTML (accessible sur écran large / au partage), juste non affiché. */
+  .listing td.md5 { display:none; }
+}
 """
 
 # Script anti-flash : posé dans <head>, il applique le thème mémorisé AVANT le
@@ -378,7 +424,10 @@ def breadcrumb(crumbs: list[tuple[str, int]]) -> str:
 
 def listing_table(rows: list[dict]) -> str:
     """rows : dicts {name, href, is_dir, date, size, md5}. Le tri éventuel est fait
-    en amont. Rendu en tableau ; enveloppé dans un conteneur scrollable sur mobile."""
+    en amont. Rendu en tableau sur écran large ; sous 768px, le CSS délinéarise les
+    lignes en « cartes empilées » (nom pleine largeur, méta condensée, MD5 masqué).
+    Les data-label des cellules date/taille servent à ce mode carte (réétiquetage via
+    CSS pour recréer les libellés de colonne) et sont inertes sur desktop."""
     trs = []
     for r in rows:
         cls = ' class="dir"' if r["is_dir"] else ""
@@ -386,8 +435,10 @@ def listing_table(rows: list[dict]) -> str:
         size = "" if r["is_dir"] else human_size(r.get("size"))
         md5 = f'<code>{esc(r["md5"])}</code>' if r.get("md5") else ""
         trs.append(
-            f"<tr><td>{name}</td><td>{esc(fmt_date(r.get('date')))}</td>"
-            f'<td class="num">{size}</td><td class="md5">{md5}</td></tr>')
+            f"<tr><td>{name}</td>"
+            f'<td data-label="Modifié le">{esc(fmt_date(r.get("date")))}</td>'
+            f'<td class="num" data-label="Taille">{size}</td>'
+            f'<td class="md5">{md5}</td></tr>')
     return (
         '<div class="scroll"><table class="listing">'
         "<thead><tr><th>Nom</th><th>Modifié le</th><th>Taille</th><th>MD5</th></tr></thead>"
