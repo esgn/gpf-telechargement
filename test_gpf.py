@@ -13,8 +13,8 @@ from gpf.catalogue import (CatalogueError, Product, load_catalogue,
 from gpf.crawl import _is_single_unit, _row_sort_key
 from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
                        zone_label, zone_sort_key)
-from gpf.model import (fmt_date, human_size, is_md5, is_md5_file, last_segment,
-                       resource_id, slug)
+from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
+                       last_segment, resource_id, slug)
 
 
 class TestModel(unittest.TestCase):
@@ -38,6 +38,16 @@ class TestModel(unittest.TestCase):
         self.assertEqual(fmt_date("pas-une-date"), "")
         self.assertEqual(fmt_date("2025-07-15"), "15 juil. 2025")
         self.assertEqual(fmt_date("2025-07-15T14:59:00+01:00"), "15 juil. 2025")
+
+    def test_fmt_datetime(self):
+        self.assertEqual(fmt_datetime(""), "")
+        self.assertEqual(fmt_datetime(None), "")
+        self.assertEqual(fmt_datetime("pas-une-date"), "")
+        # heure prise telle quelle (pas de conversion de fuseau), zéro-padding
+        self.assertEqual(fmt_datetime("2026-07-13T14:30:00+02:00"), "13 juil. 2026 à 14:30")
+        self.assertEqual(fmt_datetime("2026-01-05T09:05:00+01:00"), "5 janv. 2026 à 09:05")
+        # date seule → minuit
+        self.assertEqual(fmt_datetime("2025-07-15"), "15 juil. 2025 à 00:00")
 
     def test_slug(self):
         self.assertEqual(slug("ADMIN-EXPRESS"), "ADMIN-EXPRESS")

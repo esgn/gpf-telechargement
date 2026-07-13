@@ -23,14 +23,15 @@ import argparse
 import os
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from gpf import render
 from gpf.api import Client, fetch_catalogue, log
 from gpf.catalogue import Catalogue, CatalogueError, load_catalogue
 from gpf.crawl import Ctx, build_dir, prune_subdirs
 from gpf.markdown import to_html
-from gpf.model import fmt_date, resource_id, slug
+from gpf.model import fmt_datetime, resource_id, slug
 from gpf.validate import check_drift
 
 DEFAULT_CATALOGUE = "catalogue.json"
@@ -106,7 +107,9 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
         return 1
     live = {resource_id(e): e for e in resources}
 
-    generated = fmt_date(datetime.now(timezone.utc).isoformat())
+    # Horodatage du build en heure de Paris (indépendant du fuseau du runner CI).
+    now_paris = datetime.now(ZoneInfo("Europe/Paris"))
+    generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
     ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"])
 

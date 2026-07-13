@@ -50,6 +50,20 @@ def fmt_date(s: str | None) -> str:
     return f"{dt.day} {_MONTHS[dt.month - 1]} {dt.year}"
 
 
+def fmt_datetime(s: str | None) -> str:
+    """Formate un datetime ISO en « 15 juil. 2025 à 14:30 » (heure telle quelle, sans
+    conversion de fuseau : l'appelant fournit déjà l'instant dans le fuseau voulu).
+    Chaîne vide si illisible. Sert au « Généré le … » du pied de page ; les dates de
+    ressources crawlées gardent fmt_date (jour seul)."""
+    if not s:
+        return ""
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return ""
+    return f"{dt.day} {_MONTHS[dt.month - 1]} {dt.year} à {dt.hour:02d}:{dt.minute:02d}"
+
+
 def slug(name: str, used: set[str] | None = None) -> str:
     """Nom de dossier sûr : [A-Za-z0-9._-]. Les accents sont translittérés en ASCII
     (« Différentiel » → « Differentiel », pas « Diff_rentiel ») ; le reste devient
