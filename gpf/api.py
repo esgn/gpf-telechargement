@@ -1,10 +1,12 @@
 """Client HTTP throttlé + accès au catalogue live de la Géoplateforme.
 
-Mono-thread, aucun parallélisme : l'API plafonne à 10 requêtes/seconde par IP."""
+Les attentes réseau peuvent se chevaucher, mais les départs restent espacés par un
+limiteur global : l'API plafonne à 10 requêtes/seconde par IP."""
 
 from __future__ import annotations
 
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -15,7 +17,7 @@ from .atom import parse_feed
 # Le WAF de data.geopf.fr renvoie 403 sur le User-Agent par défaut « Python-urllib »
 # et sur tout UA contenant « bot ». On force un UA neutre.
 _HEADERS = {
-    "User-Agent": "geopf-index/1.0 (+https://github.com/geoplateforme)",
+    "User-Agent": "geopf-index/1.0 (+https://github.com/esgn/gpf-telechargement)",
     "Accept": "application/atom+xml, application/xml, */*",
 }
 
@@ -40,14 +42,25 @@ class Client:
         self.page_size = page_size
         self.requests = 0
         self._last = 0.0
+        self._throttle_lock = threading.Lock()
 
-    def _get(self, url: str) -> bytes | None:
-        for attempt in range(self.max_retries):
+    def _wait_for_slot(self) -> None:
+        """Réserve un départ de requête en respectant le débit global.
+
+        Le verrou reste pris pendant l'attente afin que les fetch parallèles des
+        sous-dossiers d'un même parent espacent leurs départs, tout en pouvant
+        attendre leurs réponses réseau en parallèle.
+        """
+        with self._throttle_lock:
             wait = self.min_interval - (time.monotonic() - self._last)
             if wait > 0:
                 time.sleep(wait)
             self._last = time.monotonic()
             self.requests += 1
+
+    def _get(self, url: str) -> bytes | None:
+        for attempt in range(self.max_retries):
+            self._wait_for_slot()
             try:
                 req = urllib.request.Request(url, headers=_HEADERS)
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
