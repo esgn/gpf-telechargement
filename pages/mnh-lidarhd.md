@@ -25,7 +25,7 @@ Il suffit simplement d'utiliser ces URLs pour télécharger chaque dalle du prod
 Vous remarquerez les `-0.25` et les `+0.25` appliqués à la Bounding Box pour extraire correctement une dalle aux coordonnées rondes. 
 
 La dalle du produit a pour nomenclature `LHD_FXX_0937_6225_MNH_O_0M50_LAMB93_IGN69` : 
-* `0937` et `6225` désigne la coordonnée en LAMBERT 93 du coin nord-ouest de l'image : `x = 937000` et `y=6225000`
+* `0937` et `6225` désigne la coordonnée en LAMBERT 93 du coin nord-ouest de l'image : `x = 937000` et `y = 6225000`
 * La bounding box de l'image est donc `xmin = 937000, ymin = 6224000, xmax = 938000, ymin = 6224000` (dalle de 1 kilomètre par 1 kilomètre) 
 * La bounding box pour extraire correctement à partir du flux WMS se voit appliquer `-0.25,+0.25,-0.25,+0.25` soit `BBOX=936999.75,6224000.25,937999.75,6225000.25`
 
