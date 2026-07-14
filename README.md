@@ -4,7 +4,9 @@ Générateur de **site statique** pour faciliter le téléchargement des donnée
 l'IGN diffusées par le service de Téléchargement de la [Géoplateforme](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/)
 (`data.geopf.fr`). Les produits sont organisés **par thème**, chaque produit a
 une **fiche** (résumé + liens vers ses spécifications officielles et ressources) et son
-**arborescence de téléchargement**.
+**arborescence de téléchargement**. Le site est régénéré de manière régulière.
+
+👉 Le site statique généré est consultable ici : https://telecharger.geoplateforme.fr
 
 Le site **n'héberge aucune donnée** : les liens de fichiers pointent directement
 vers `data.geopf.fr`. C'est un index navigable, plus lisible que le service brut.
@@ -146,7 +148,7 @@ une nouvelle version — l'API de téléchargement ne fournit pas ces liens.
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) régénère et publie
 le site : un step `--check` signale la dérive du catalogue, puis génère le site et
-déploie sur Pages (cron quotidien + déclenchement manuel). Rien n'est committé dans ce dépôt.
+déploie sur Pages (cron tous les 3 jours + déclenchement manuel). Rien n'est committé dans ce dépôt.
 
 Dans **Settings → Pages**, choisir **Source : GitHub Actions**.
 
