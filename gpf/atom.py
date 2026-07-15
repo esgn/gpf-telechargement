@@ -35,8 +35,8 @@ def parse_feed(xml_bytes: bytes):
     md5 (str|None), fmt/fmt_label, zone/zone_label, editionDate. Les entries sans
     <link> exploitable sont ignorées. Lève ET.ParseError si le XML est tronqué."""
     root = ET.fromstring(xml_bytes)
-    pagecount = _int(root.get(_GPF + "pagecount"), 1)
-    totalentries = _int(root.get(_GPF + "totalentries"), 0)
+    pagecount = _int(_gpf_attr(root, "pagecount"), 1)
+    totalentries = _int(_gpf_attr(root, "totalentries"), 0)
     feed_updated = root.findtext("atom:updated", default="", namespaces=NS)
 
     entries = []
@@ -45,7 +45,6 @@ def parse_feed(xml_bytes: bytes):
         if link is None or not link.get("href"):
             continue
 
-        length = _int(link.get(_GPF + "length"), None)
         content = (e.findtext("atom:content", default="", namespaces=NS) or "").strip()
         fmt = e.find("gpf_dl:format", NS)
         zone = e.find("gpf_dl:zone", NS)
@@ -56,13 +55,13 @@ def parse_feed(xml_bytes: bytes):
             "updated": e.findtext("atom:updated", default="", namespaces=NS).strip(),
             "is_dir": (link.get("type") or "").strip() == _ATOM_TYPE,
             "href": link.get("href"),
-            "length": length,
+            "length": _int(_gpf_attr(link, "length"), None),
             # <content> est polysémique : hash MD5 au niveau fichier, sinon description.
             "md5": content if is_md5(content) else None,
-            "fmt": fmt.get("term") if fmt is not None else None,
-            "fmt_label": fmt.get("label") if fmt is not None else None,
-            "zone": zone.get("term") if zone is not None else None,
-            "zone_label": zone.get("label") if zone is not None else None,
+            "fmt": _plain_attr(fmt, "term"),
+            "fmt_label": _plain_attr(fmt, "label"),
+            "zone": _plain_attr(zone, "term"),
+            "zone_label": _plain_attr(zone, "label"),
             "editionDate": (e.findtext("gpf_dl:editionDate", default="",
                                        namespaces=NS).strip() or None),
         })
@@ -76,6 +75,19 @@ def _int(value, default):
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _gpf_attr(el: ET.Element, name: str, default=None):
+    """Lit un attribut porté PAR le namespace gpf_dl (pagecount, length…).
+    .get() n'accepte pas de dict de namespaces : on passe la notation {URI}local."""
+    return el.get(_GPF + name, default)
+
+
+def _plain_attr(el: ET.Element | None, name: str):
+    """Lit un attribut du namespace VIDE (term, label sur <format>/<zone>).
+    Les attributs XML n'héritent PAS du namespace de leur élément : bien que
+    <gpf_dl:format> soit dans gpf_dl, ses attributs term/label sont nus."""
+    return el.get(name) if el is not None else None
 
 
 def _pick_link(entry) -> ET.Element | None:
