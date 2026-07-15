@@ -80,9 +80,10 @@ class Product:
 
 
 class Catalogue:
-    def __init__(self, site: dict, themes: list[dict], products: list[Product],
-                 producers: dict[str, dict] | None = None):
-        self.site = site
+    def __init__(self, site: dict, service: dict, themes: list[dict],
+                 products: list[Product], producers: dict[str, dict] | None = None):
+        self.site = site                          # présentation du site web
+        self.service = service                    # accès au service de téléchargement
         self.themes = themes                      # ordonnés (ordre d'affichage)
         self.products = products
         self.producers = producers or {}          # id → {name, logo}
@@ -221,4 +222,5 @@ def load_catalogue(path: str) -> Catalogue:
                         f"« {p.id} » : producteur inconnu « {pid} » "
                         f"(déclarez-le dans producers[] ou laissez-le vide)")
 
-    return Catalogue(data.get("site", {}), themes, products, producers)
+    return Catalogue(data.get("site", {}), data.get("service", {}),
+                     themes, products, producers)

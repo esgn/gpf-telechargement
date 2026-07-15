@@ -14,3 +14,5 @@ manifest.json
 # Sauvegarde de l'ancien dépôt git (repartir d'un historique vierge)
 .git.backup/
 *.git.backup
+
+CODE_REVIEW.md

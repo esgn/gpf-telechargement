@@ -9,11 +9,11 @@
   // supprimer : "include": false. Pour lister les nouveaux produits de l'API
   // absents d'ici : python build.py --check
 
+  // Présentation du site web généré (titres, textes, garde-fou d'affichage).
   "site": {
     "title": "Téléchargement Géoplateforme",
     // Chapô affiché sous le titre de l'accueil (texte simple ; vide = pas de chapô).
     "intro": "Parcourez et téléchargez les données ouvertes de l'IGN diffusées par le service de téléchargement de la Géoplateforme, organisées par thème.",
-    "base_url": "https://data.geopf.fr/telechargement",
     "official_help_url": "https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/",
     // Bloc « aide » en bas de l'accueil : phrase + libellé du lien (vers official_help_url).
     // help_text vide → bloc masqué.
@@ -22,8 +22,15 @@
     // Pied de page, en Markdown (liens autorisés). « Généré le <date>. » est préfixé
     // automatiquement au build.
     "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr.",
-    // Garde-fou : un dossier dépassant ce nombre d'entrées n'est pas déplié (0 = illimité).
+    // Garde-fou d'affichage : un dossier dépassant ce nombre d'entrées n'est pas
+    // déplié (le service pourrait en servir davantage). 0 = illimité.
     "max_entries": 50000
+  },
+
+  // Accès au service de téléchargement interrogé (l'API Géoplateforme).
+  "service": {
+    "base_url": "https://data.geopf.fr/telechargement",
+    "capabilities_path": "/capabilities"
   },
 
   // Producteurs affichés sur les cartes produit. Chaque produit référence un

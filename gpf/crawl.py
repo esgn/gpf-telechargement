@@ -15,6 +15,7 @@ render.write_page / render.listing_table."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import os
 import re
 import shutil
@@ -25,6 +26,8 @@ from .model import is_md5_file, last_segment, resource_id, slug
 from .rules import GROUP_LEVELS, canonicalize_zones, surviving_levels
 
 _VOLUME_RE = re.compile(r"^(.*)\.(\d{3,})$")  # « ….7z.001 » → base « ….7z », vol « 001 »
+_HTTP_WORKERS = 8
+_NOT_FETCHED = object()
 
 
 class Ctx:
@@ -93,13 +96,14 @@ def _descend(crumbs, label):
     return [(lbl, up + 1) for lbl, up in crumbs] + [(label, 0)]
 
 
-def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int):
+def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
+              fetched=_NOT_FETCHED):
     """Construit le dossier de `feed_url` et renvoie comment le parent doit le lister :
       ("files", rows) → aplati : le parent liste directement ce(s) fichier(s) ;
       ("dir",  None)  → un dossier a été écrit ; le parent liste un lien de dossier.
     crumbs : fil d'Ariane [(label, up)] du dossier courant (cf. render.breadcrumb).
     depth : 1 = ressource, 2 = sous-ressource, …"""
-    got = ctx.client.all_entries(feed_url)
+    got = ctx.client.all_entries(feed_url) if fetched is _NOT_FETCHED else fetched
     if got is None:
         # Erreur transitoire : conserver l'index déjà présent, sinon page de secours.
         if not os.path.exists(os.path.join(fs_dir, "index.html")):
@@ -124,6 +128,7 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int):
     dirs = [e for e in entries if e["is_dir"]]
     files = [(e, feed_updated) for e in entries
              if not e["is_dir"] and not is_md5_file(e["href"], e["title"])]
+    prefetched = _prefetch_dirs(ctx, dirs)
 
     # Aplatissement (depth ≥ 2 : on garde toujours un dossier par ressource niveau 1).
     if depth >= 2 and not dirs and _is_single_unit(files):
@@ -140,23 +145,36 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int):
         # id du produit (dernier segment du feed .../resource/<id>) : donne le contexte
         # au tri des zones (ex. « FR » = bloc et non national pour le LiDAR HD).
         _build_grouped(ctx, fs_dir, crumbs, dirs, GROUP_LEVELS, depth,
-                       product_id=last_segment(feed_url))
+                       product_id=last_segment(feed_url), prefetched=prefetched)
         return ("dir", None)
 
-    _write_dir(ctx, fs_dir, crumbs, dirs, files, depth)
+    _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, prefetched=prefetched)
     return ("dir", None)
 
 
-def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth):
+def _prefetch_dirs(ctx: Ctx, dirs: list[dict]) -> dict[str, object]:
+    """Récupère en parallèle les feeds enfants, avec le throttle global du client."""
+    if len(dirs) < 2:
+        return {}
+    workers = min(_HTTP_WORKERS, len(dirs))
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {e["href"]: executor.submit(ctx.client.all_entries, e["href"])
+                   for e in dirs}
+        return {href: future.result() for href, future in futures.items()}
+
+
+def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, prefetched=None):
     """Écrit un dossier « ordinaire » : fichiers directs + sous-dossiers récursifs
     (avec aplatissement des enfants mono-unité), puis purge les dossiers obsolètes."""
     rows = [_file_row(e, fu) for e, fu in files]
+    prefetched = prefetched or {}
     used, kept = set(), set()
     for e in dirs:
         name = e["title"] or resource_id(e)
         child = slug(resource_id(e), used)
         kind, payload = build_dir(ctx, e["href"], os.path.join(fs_dir, child),
-                                  _descend(crumbs, name), depth + 1)
+                                  _descend(crumbs, name), depth + 1,
+                                  fetched=prefetched.get(e["href"], _NOT_FETCHED))
         if kind == "files":
             rows.extend(payload)
         else:
@@ -167,7 +185,8 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth):
     prune_subdirs(fs_dir, keep=kept)
 
 
-def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None):
+def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None,
+                   prefetched=None):
     """Classe `entries` selon `levels` (règles rules.GROUP_LEVELS) : un sous-dossier
     par valeur de term. Tout niveau `collapse_when_single` dont les entrées
     partagent une seule valeur est retiré, où qu'il soit dans la hiérarchie (pas de
@@ -175,6 +194,7 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None)
     directement. `product_id` (id du produit racine) est transmis au tri des niveaux
     pour d'éventuels cas dépendant du produit (cf. rules.zone_sort_key)."""
     levels = surviving_levels(entries, levels)
+    prefetched = prefetched or {}
     if not levels:
         # Une seule sous-ressource au bout du classement : son dossier porterait un
         # nom brut (id API : « …__FLATGEOBUF…_FRA_2026-01-01 ») entièrement redondant
@@ -183,7 +203,9 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None)
         # remontent d'un cran, sans dossier intermédiaire.
         if len(entries) == 1 and entries[0]["is_dir"]:
             kind, payload = build_dir(ctx, entries[0]["href"], fs_dir, crumbs,
-                                      depth + 1)
+                                      depth + 1,
+                                      fetched=prefetched.get(entries[0]["href"],
+                                                             _NOT_FETCHED))
             if kind == "files":
                 # SR mono-unité (ex. les volumes d'un .7z) : build_dir n'a rien
                 # écrit et renvoie les fichiers dans l'ordre du flux (non trié). On
@@ -194,7 +216,7 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None)
                 prune_subdirs(fs_dir, keep=())
             # kind == "dir" : build_dir a déjà écrit fs_dir (listing multi-fichiers).
             return
-        _write_dir(ctx, fs_dir, crumbs, entries, [], depth)
+        _write_dir(ctx, fs_dir, crumbs, entries, [], depth, prefetched=prefetched)
         return
 
     level = levels[0]
@@ -215,7 +237,7 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None)
         label = labels[term]
         _build_grouped(ctx, os.path.join(fs_dir, sslug),
                        _descend(crumbs, label), groups[term], levels[1:], depth + 1,
-                       product_id=product_id)
+                       product_id=product_id, prefetched=prefetched)
         rows.append(_dir_row(label, sslug + "/"))
     _emit(ctx, fs_dir, crumbs, rows)          # rows suit déjà l'ordre du niveau
     prune_subdirs(fs_dir, keep={r["href"].rstrip("/") for r in rows})
