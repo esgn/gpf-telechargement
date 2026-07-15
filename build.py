@@ -39,6 +39,9 @@ DEFAULT_OUT = "site"
 ASSETS_DIR = "assets"        # copié tel quel vers <out>/assets (logos de producteurs…)
 PAGES_DIR = "pages"          # sources Markdown des pages éditoriales (converties, NON copiées)
 CAPABILITIES = "/capabilities"
+# Repère d'insertion : _prepend_body insère l'en-tête produit juste après ce <main>
+# du gabarit render._PAGE. Doit rester synchrone avec render._PAGE.
+_MAIN_TAG = "<main>\n"
 DEFAULT_BASE = "https://data.geopf.fr/telechargement"
 DEFAULT_HELP = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
                 "utiliser-les-services-de-la-geoplateforme/telechargement/")
@@ -102,6 +105,15 @@ def _product_crumbs(theme_label: str, title: str) -> list[tuple[str, int]]:
     return [("Accueil", 2), (theme_label, 1), (title, 0)]
 
 
+def _filtered_out(only: str | None, only_theme: str | None,
+                  product_id: str, theme: str) -> bool:
+    """Vrai si un filtre --only / --only-theme est actif et exclut ce produit.
+    Le produit reste listé dans la navigation (sa carte est déjà enregistrée),
+    mais il n'est ni crawlé ni construit."""
+    return bool((only and only != product_id)
+                or (only_theme and only_theme != theme))
+
+
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
               only_theme: str | None, rps: float) -> int:
     """Reconstruit le site : chaque produit inclus est re-crawlé (pas de cache).
@@ -129,41 +141,34 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     built = 0
 
     for product in cat.included():
-        # Entrée « page éditoriale » : pas de ressource API ni de crawl. On génère une
-        # page interne à partir du Markdown (pages/<f>.md) ; sa carte y renvoie comme
-        # pour un produit normal (href interne, voir _cards).
-        if product.page:
-            theme = cat.resolve_theme(product)
-            theme_dir = slug(theme)
-            keep_themes.add(theme_dir)
-            title = product.title or product.id
-            sections.setdefault(theme, []).append(_section_card(product, title, cat))
-            if (only and only != product.id) or (only_theme and only_theme != theme):
+        # 1. Résoudre l'entrée API. Une « page éditoriale » (product.page) n'a pas de
+        #    ressource API ; un produit crawlé absent de l'API est ignoré ici, avant
+        #    même d'apparaître dans la navigation.
+        entry = None
+        if not product.page:
+            entry = live.get(product.id)
+            if entry is None:
+                log(f"  ! « {product.id} » inclus mais absent de l'API — ignoré.")
                 continue
-            log(f"+ {title}")
-            _build_page(ctx, product, os.path.join(out_dir, theme_dir, product.id),
-                        title, cat.theme_label(theme))
-            built += 1
-            continue
 
-        entry = live.get(product.id)
-        if entry is None:
-            log(f"  ! « {product.id} » inclus mais absent de l'API — ignoré.")
-            continue
-
+        # 2. Enregistrer la carte pour la navigation — TOUJOURS, même si --only saute
+        #    la construction plus bas : l'accueil et les pages de thème restent complets.
         theme = cat.resolve_theme(product)
         theme_dir = slug(theme)
-        prod_dir = os.path.join(out_dir, theme_dir, product.id)
-        title = product.title or entry["title"] or product.id
+        title = product.title or (entry and entry["title"]) or product.id
         keep_themes.add(theme_dir)
         sections.setdefault(theme, []).append(_section_card(product, title, cat))
 
-        if only and only != product.id:
-            continue
-        if only_theme and only_theme != theme:
+        # 3. Construire — sauf si un filtre --only/--only-theme exclut ce produit.
+        if _filtered_out(only, only_theme, product.id, theme):
             continue
         log(f"+ {title}")
-        _build_product(ctx, product, entry, prod_dir, title, cat.theme_label(theme))
+        prod_dir = os.path.join(out_dir, theme_dir, product.id)
+        if product.page:
+            # Page éditoriale : Markdown converti en HTML, pas de crawl ni de listing.
+            _build_page(ctx, product, prod_dir, title, cat.theme_label(theme))
+        else:
+            _build_product(ctx, product, entry, prod_dir, title, cat.theme_label(theme))
         built += 1
 
     if not only and not only_theme:
@@ -206,9 +211,6 @@ def _build_page(ctx: Ctx, product, prod_dir, title, theme_label) -> None:
         body = to_html(f.read())
     crumbs = render.breadcrumb(_product_crumbs(theme_label, title))
     ctx.write_page(prod_dir, title, body, crumbs)
-
-
-_MAIN_TAG = "<main>\n"
 
 
 def _prepend_body(index_path: str, html_fragment: str) -> None:
