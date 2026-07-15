@@ -461,7 +461,7 @@ class TestCatalogue(unittest.TestCase):
         # pas d'erreur ; si inclus, erreur de validation)
         p = Product({"id": "X", "theme": "inexistant"})
         from gpf.catalogue import Catalogue, FALLBACK_THEME
-        cat = Catalogue({}, [{"id": "admin", "label": "Admin"}], [p])
+        cat = Catalogue({}, {}, [{"id": "admin", "label": "Admin"}], [p])
         self.assertEqual(cat.resolve_theme(p), FALLBACK_THEME)
 
     def test_malformed_theme_rejected(self):

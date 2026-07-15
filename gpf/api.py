@@ -112,9 +112,10 @@ class Client:
         return total, updated, entries, complete
 
 
-def fetch_catalogue(client: Client, base_url: str, capabilities_path: str):
-    """Liste des ressources du catalogue (niveau 1). None si inaccessible."""
-    got = client.all_entries(base_url + capabilities_path)
+def fetch_capabilities(client: Client, service: dict):
+    """Liste des ressources exposées par le service (niveau 1). None si inaccessible.
+    `service` : dict {base_url, capabilities_path} (cf. build._service)."""
+    got = client.all_entries(service["base_url"] + service["capabilities_path"])
     if got is None:
         log("ERREUR : catalogue inaccessible — abandon.")
         return None

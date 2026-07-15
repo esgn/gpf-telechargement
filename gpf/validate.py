@@ -3,16 +3,16 @@ pour maintenir catalogue.json à jour quand l'IGN ajoute/retire des ressources."
 
 from __future__ import annotations
 
-from .api import Client, fetch_catalogue, log
+from .api import Client, fetch_capabilities, log
 from .catalogue import Catalogue
 from .model import resource_id
 
 
-def check_drift(client: Client, catalogue: Catalogue, base_url: str,
-                capabilities_path: str) -> int:
+def check_drift(client: Client, catalogue: Catalogue, service: dict) -> int:
     """Affiche un rapport de dérive (sans rien construire). Renvoie un code de
-    sortie : 0 si aucun écart, 1 si le catalogue live est inaccessible."""
-    resources = fetch_catalogue(client, base_url, capabilities_path)
+    sortie : 0 si aucun écart, 1 si le catalogue live est inaccessible.
+    `service` : dict {base_url, capabilities_path} (cf. build._service)."""
+    resources = fetch_capabilities(client, service)
     if resources is None:
         return 1
 
@@ -27,7 +27,7 @@ def check_drift(client: Client, catalogue: Catalogue, base_url: str,
     missing = sorted(known - live.keys())
     orphan = sorted(included - live.keys())
 
-    log(f"\n--- Dérive catalogue local ↔ {base_url} ---")
+    log(f"\n--- Dérive catalogue local ↔ {service['base_url']} ---")
     log(f"  catalogue : {len(known)} produit(s) déclaré(s), "
         f"{len(included)} inclus ; API : {len(live)} ressource(s).")
     _section("nouveaux dans l'API, absents du catalogue",
