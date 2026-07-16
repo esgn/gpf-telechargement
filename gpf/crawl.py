@@ -41,7 +41,8 @@ class Ctx:
         self.footer = footer          # bloc <footer> HTML pré-rendu (identique partout)
         self.max_entries = max_entries
         self.pages = 0
-        self.errors: list[str] = []
+        self.errors: list[str] = []      # réseau/données : rendent le build fatal
+        self.warnings: list[str] = []    # éditorial : signalés mais non bloquants
 
     def write_page(self, fs_dir, title, body, crumbs):
         render.write_page(fs_dir, title, body, crumbs=crumbs, footer=self.footer,
@@ -105,18 +106,19 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
     depth : 1 = ressource, 2 = sous-ressource, …"""
     got = ctx.client.all_entries(feed_url) if fetched is _NOT_FETCHED else fetched
     if got is None:
-        # Erreur transitoire : conserver l'index déjà présent, sinon page de secours.
-        if not os.path.exists(os.path.join(fs_dir, "index.html")):
-            ctx.write_page(fs_dir, crumbs[-1][0], render.unavailable_body(feed_url),
-                          render.breadcrumb(crumbs))
-        ctx.errors.append(feed_url)
+        # Feed inaccessible : le CI est de toute façon rendu rouge en fin de build
+        # (cf. run_build), donc rien n'est publié. On écrit une page de secours pour
+        # laisser un site cohérent en dev, sans réutiliser d'ancien contenu.
+        ctx.write_page(fs_dir, crumbs[-1][0], render.unavailable_body(feed_url),
+                      render.breadcrumb(crumbs))
+        ctx.errors.append(f"{crumbs[-1][0]} : feed inaccessible ({feed_url})")
         return ("dir", None)
     total, feed_updated, entries, complete = got
     if not complete:
         # Listing partiel (page intermédiaire échouée) : on publie ce qu'on a mais
-        # on le signale, pour ne pas laisser croire à un dossier complet.
+        # on le signale comme fatal, pour ne pas publier un dossier tronqué.
         log(f"  ! {crumbs[-1][0]} : listing partiel (une page a échoué)")
-        ctx.errors.append(feed_url)
+        ctx.errors.append(f"{crumbs[-1][0]} : listing partiel ({feed_url})")
 
     if ctx.max_entries and total > ctx.max_entries:
         log(f"  ~ {crumbs[-1][0]} : trop volumineux ({total} entrées), non déplié")
@@ -141,7 +143,8 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
         for code in conflicts:
             log(f"  ~ {crumbs[-1][0]} : {code} non fusionné "
                 f"(date en conflit avec son code ISO)")
-            ctx.errors.append(f"{feed_url} (zone {code})")
+            ctx.warnings.append(f"{crumbs[-1][0]} : zone {code} non fusionnée "
+                                f"(date en conflit avec son code ISO)")
         # id du produit (dernier segment du feed .../resource/<id>) : donne le contexte
         # au tri des zones (ex. « FR » = bloc et non national pour le LiDAR HD).
         _build_grouped(ctx, fs_dir, crumbs, dirs, GROUP_LEVELS, depth,
