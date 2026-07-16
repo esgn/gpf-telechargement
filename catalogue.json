@@ -176,7 +176,6 @@
         { "label": "Descriptif de contenu - BD TOPO® Express (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - BD TOPO® Express (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" },
         { "label": "Explorateur de la documentation et du modèle BD TOPO®.", "url": "https://bdtopoexplorer.ign.fr/", "type": "explorateur" }        
-
       ]
     },
     {
