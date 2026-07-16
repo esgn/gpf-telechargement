@@ -473,6 +473,7 @@ SPEC_ICONS = {
     "tutoriel": "🧪",     # tutoriel technique
     "interface": "🖱️",    # interface interactive de téléchargement
     "carte": "🗺️",        # carte / emprise
+    "explorateur": "🧭",   # explorateur interactif du produit (ex. BD TOPO Explorer)
 }
 _SPEC_ICON_DEFAULT = "📄"
 
