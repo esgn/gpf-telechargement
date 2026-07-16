@@ -179,7 +179,21 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     _write_home(ctx, cat, sections, site)
 
     log(f"\nTerminé : {built} produit(s) construit(s), {ctx.pages} page(s), "
-        f"{client.requests} requête(s), {len(ctx.errors)} erreur(s).")
+        f"{client.requests} requête(s).")
+
+    if ctx.warnings:
+        log(f"\nAvertissements ({len(ctx.warnings)}) :")
+        for w in ctx.warnings:
+            log(f"  - {w}")
+
+    if ctx.errors:
+        # Erreurs réseau/données : le site rendu est incomplet. On échoue pour que
+        # le workflow CI (upload-pages) ne publie pas un site tronqué.
+        log(f"\nERREURS FATALES ({len(ctx.errors)}) :")
+        for e in ctx.errors:
+            log(f"  - {e}")
+        return 1
+
     return 0
 
 
