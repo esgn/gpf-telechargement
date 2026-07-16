@@ -128,9 +128,11 @@ class Client:
                 if e.code == 429:
                     # Rate-limit : mur GLOBAL. On suit Retry-After si l'API le donne,
                     # sinon backoff jitteré. Tous les workers attendront ce mur.
+                    # (« Retry-After: 0 » = réessaie tout de suite ; is-not-None et
+                    # non `or`, car 0.0 est falsy et déclencherait le backoff à tort.)
                     last_cause = f"HTTP 429 {e.reason}"
-                    delay = _parse_retry_after(e.headers) or _backoff(attempt)
-                    self._pause_all(delay)
+                    ra = _parse_retry_after(e.headers)
+                    self._pause_all(ra if ra is not None else _backoff(attempt))
                     continue
                 if 500 <= e.code < 600:
                     # Panne serveur ponctuelle : backoff LOCAL, pas de mur global.
@@ -188,12 +190,16 @@ class Client:
 
 
 def fetch_capabilities(client: Client, service: dict):
-    """Liste des ressources exposées par le service (niveau 1). None si inaccessible.
+    """Liste des ressources exposées par le service (niveau 1). None si le catalogue
+    est inaccessible OU seulement partiellement récupéré : un catalogue tronqué
+    ferait disparaître des produits entiers de la navigation (build) ou générerait
+    de fausses dérives « disparu de l'API » (validate), donc on le traite comme fatal.
     `service` : dict {base_url, capabilities_path} (cf. build._service)."""
     got = client.all_entries(service["base_url"] + service["capabilities_path"])
     if got is None:
         log("ERREUR : catalogue inaccessible — abandon.")
         return None
     if not got[3]:
-        log("  ! catalogue partiellement récupéré (une page a échoué).")
+        log("ERREUR : catalogue partiellement récupéré (une page a échoué) — abandon.")
+        return None
     return got[2]
