@@ -5,6 +5,7 @@ limiteur global : l'API plafonne à 10 requêtes/seconde par IP."""
 
 from __future__ import annotations
 
+import socket
 import sys
 import threading
 import time
@@ -59,6 +60,10 @@ class Client:
             self.requests += 1
 
     def _get(self, url: str) -> bytes | None:
+        # Cause du dernier essai raté (code HTTP, timeout, erreur réseau), gardée pour
+        # le message d'échec définitif : sans elle, on ne saurait pas si un feed mort
+        # l'est à cause d'un 503, d'un timeout ou d'une coupure DNS.
+        last_cause = "cause inconnue"
         for attempt in range(self.max_retries):
             self._wait_for_slot()
             try:
@@ -69,13 +74,23 @@ class Client:
                 if e.code == 404:
                     return None
                 if e.code == 429 or 500 <= e.code < 600:
+                    last_cause = f"HTTP {e.code} {e.reason}"
                     time.sleep(2 ** attempt)
                     continue
-                log(f"  ! HTTP {e.code} sur {url}")
+                log(f"  ! HTTP {e.code} {e.reason} sur {url}")
                 return None
-            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
+            except (TimeoutError, socket.timeout):
+                last_cause = f"timeout ({self.timeout}s)"
                 time.sleep(2 ** attempt)
-        log(f"  ! échec définitif après {self.max_retries} essais : {url}")
+            except urllib.error.URLError as e:
+                # DNS, connexion refusée, TLS… : la cause utile est dans e.reason.
+                last_cause = f"URLError: {e.reason}"
+                time.sleep(2 ** attempt)
+            except (ConnectionError, OSError) as e:
+                last_cause = f"{type(e).__name__}: {e}"
+                time.sleep(2 ** attempt)
+        log(f"  ! échec définitif après {self.max_retries} essais "
+            f"(dernière cause : {last_cause}) : {url}")
         return None
 
     def feed(self, feed_url: str, page: int = 1):
