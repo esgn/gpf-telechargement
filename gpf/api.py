@@ -85,6 +85,8 @@ class Client:
         self.requests = 0
         self.rate_limits = 0          # nombre de 429 rencontrés
         self.rate_limit_wait = 0.0    # temps mural (s) passé bloqué par les murs 429
+        self.retries = 0              # nombre de backoffs sur échec transitoire (5xx/timeout/réseau)
+        self.retry_wait = 0.0         # temps (s) passé en backoff local, CUMULÉ sur les workers
         self._last = 0.0
         self._retry_until = 0.0       # mur 429 global (time.monotonic), 0 = aucun
         self._throttle_lock = threading.Lock()
@@ -105,6 +107,18 @@ class Client:
             # si le mur précédent est déjà expiré, on ne compte pas le temps écoulé.
             self.rate_limit_wait += max(0.0, new_until - max(self._retry_until, now))
             self._retry_until = max(self._retry_until, new_until)
+
+    def _backoff_sleep(self, attempt: int) -> None:
+        """Backoff LOCAL sur échec transitoire (5xx / timeout / réseau), instrumenté.
+        À la différence du mur 429, ces attentes sont indépendantes par worker (pas de
+        verrou global) : `retry_wait` est donc un CUMUL sur les workers, pas un temps
+        mural — à lire comme un ordre de grandeur de l'ampleur des échecs transitoires,
+        pas comme du temps de build perdu tel quel."""
+        delay = _backoff(attempt)
+        with self._throttle_lock:
+            self.retries += 1
+            self.retry_wait += delay
+        time.sleep(delay)
 
     def _wait_for_slot(self) -> None:
         """Réserve un départ de requête en respectant le débit global et un éventuel
@@ -161,20 +175,20 @@ class Client:
                 if 500 <= e.code < 600:
                     # Panne serveur ponctuelle : backoff LOCAL, pas de mur global.
                     last_cause = f"HTTP {e.code} {e.reason}"
-                    time.sleep(_backoff(attempt))
+                    self._backoff_sleep(attempt)
                     continue
                 log(f"  ! HTTP {e.code} {e.reason} sur {url}")
                 return None
             except (TimeoutError, socket.timeout):
                 last_cause = f"timeout ({self.timeout}s)"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
             except urllib.error.URLError as e:
                 # DNS, connexion refusée, TLS… : la cause utile est dans e.reason.
                 last_cause = f"URLError: {e.reason}"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
             except (ConnectionError, OSError) as e:
                 last_cause = f"{type(e).__name__}: {e}"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
         log(f"  ! échec définitif après {self.max_retries} essais "
             f"(dernière cause : {last_cause}) : {url}")
         return None

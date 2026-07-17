@@ -23,6 +23,7 @@ import argparse
 import os
 import shutil
 import sys
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -122,6 +123,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     dans les deux cas les autres dossiers ne sont pas purgés. Les pages de thème
     et l'accueil sont toujours régénérées à partir du catalogue complet, de sorte
     que la navigation reste cohérente même quand un seul produit/thème est crawlé."""
+    t0 = time.monotonic()
     site = _site(cat)
     service = _service(cat)
     client = Client(rps=rps, workers=workers)
@@ -178,11 +180,17 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     _write_theme_pages(ctx, cat, sections)
     _write_home(ctx, cat, sections, site)
 
+    elapsed = time.monotonic() - t0
+    eff_rps = client.requests / elapsed if elapsed else 0.0
     log(f"\nTerminé : {built} produit(s) construit(s), {ctx.pages} page(s), "
-        f"{client.requests} requête(s).")
+        f"{client.requests} requête(s) en {elapsed/60:.1f} min "
+        f"({eff_rps:.1f} req/s effectif).")
     if client.rate_limits:
         log(f"  Rate-limit : {client.rate_limits} réponse(s) 429, "
-            f"{client.rate_limit_wait:.1f}s d'attente avant reprise.")
+            f"{client.rate_limit_wait:.1f}s d'attente mur global.")
+    if client.retries:
+        log(f"  Réessais : {client.retries} échec(s) transitoire(s) (5xx/timeout/réseau), "
+            f"{client.retry_wait:.1f}s de backoff cumulé.")
 
     if ctx.warnings:
         log(f"\nAvertissements ({len(ctx.warnings)}) :")
