@@ -26,7 +26,7 @@ from .model import is_md5_file, last_segment, resource_id, slug
 from .rules import GROUP_LEVELS, canonicalize_zones, surviving_levels
 
 _VOLUME_RE = re.compile(r"^(.*)\.(\d{3,})$")  # « ….7z.001 » → base « ….7z », vol « 001 »
-_HTTP_WORKERS = 8
+_DEFAULT_HTTP_WORKERS = 8  # défaut si Ctx n'en reçoit pas (surchargeable via --workers)
 _NOT_FETCHED = object()
 
 
@@ -35,11 +35,12 @@ class Ctx:
     page, garde-fou volumétrie, compteurs."""
 
     def __init__(self, client: Client, out_dir: str, footer: str,
-                 max_entries: int = 0):
+                 max_entries: int = 0, workers: int = _DEFAULT_HTTP_WORKERS):
         self.client = client
         self.out_dir = out_dir
         self.footer = footer          # bloc <footer> HTML pré-rendu (identique partout)
         self.max_entries = max_entries
+        self.workers = workers        # workers HTTP du prefetch (throttle global du client)
         self.pages = 0
         self.errors: list[str] = []      # réseau/données : rendent le build fatal
         self.warnings: list[str] = []    # éditorial : signalés mais non bloquants
@@ -159,7 +160,7 @@ def _prefetch_dirs(ctx: Ctx, dirs: list[dict]) -> dict[str, object]:
     """Récupère en parallèle les feeds enfants, avec le throttle global du client."""
     if len(dirs) < 2:
         return {}
-    workers = min(_HTTP_WORKERS, len(dirs))
+    workers = min(ctx.workers, len(dirs))
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {e["href"]: executor.submit(ctx.client.all_entries, e["href"])
                    for e in dirs}
