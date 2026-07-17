@@ -5,7 +5,9 @@ limiteur global : l'API plafonne à 10 requêtes/seconde par IP."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import email.utils
+import gzip
 import random
 import socket
 import sys
@@ -71,7 +73,7 @@ class Client:
     trafic des autres empêcherait le compteur de redescendre (429 en boucle)."""
 
     def __init__(self, rps: float = 10, timeout: int = 30,
-                 max_retries: int = 5, page_size: int = 50):
+                 max_retries: int = 5, page_size: int = 50, workers: int = 8):
         # L'API plafonne à 10 req/s ; on borne dans (0, 10] pour éviter à la fois
         # une division par zéro et un throttle négatif (qui martèlerait l'API).
         rps = min(10.0, rps) if rps and rps > 0 else 10.0
@@ -79,7 +81,12 @@ class Client:
         self.timeout = timeout
         self.max_retries = max_retries
         self.page_size = page_size
+        self.workers = max(1, workers)   # requêtes en vol simultanées (throttle global inchangé)
         self.requests = 0
+        self.rate_limits = 0          # nombre de 429 rencontrés
+        self.rate_limit_wait = 0.0    # temps mural (s) passé bloqué par les murs 429
+        self.retries = 0              # nombre de backoffs sur échec transitoire (5xx/timeout/réseau)
+        self.retry_wait = 0.0         # temps (s) passé en backoff local, CUMULÉ sur les workers
         self._last = 0.0
         self._retry_until = 0.0       # mur 429 global (time.monotonic), 0 = aucun
         self._throttle_lock = threading.Lock()
@@ -87,9 +94,31 @@ class Client:
     def _pause_all(self, delay: float) -> None:
         """Pose un mur 429 global : recule `_retry_until` d'au moins `delay` s pour
         que tous les workers observent la pause au prochain `_wait_for_slot`. On ne
-        raccourcit jamais un mur déjà plus lointain (max)."""
+        raccourcit jamais un mur déjà plus lointain (max).
+
+        `rate_limit_wait` n'accumule que le PROLONGEMENT effectif du mur au-delà de
+        ce qui était déjà planifié : deux 429 quasi simultanés dont les murs se
+        recouvrent ne comptent qu'une fois — c'est bien le temps mural d'attente,
+        pas la somme (trompeuse) vue par chaque worker bloqué en parallèle."""
         with self._throttle_lock:
-            self._retry_until = max(self._retry_until, time.monotonic() + delay)
+            now = time.monotonic()
+            new_until = now + delay
+            # Prolongement au-delà du mur EN COURS (max(mur restant, maintenant)) :
+            # si le mur précédent est déjà expiré, on ne compte pas le temps écoulé.
+            self.rate_limit_wait += max(0.0, new_until - max(self._retry_until, now))
+            self._retry_until = max(self._retry_until, new_until)
+
+    def _backoff_sleep(self, attempt: int) -> None:
+        """Backoff LOCAL sur échec transitoire (5xx / timeout / réseau), instrumenté.
+        À la différence du mur 429, ces attentes sont indépendantes par worker (pas de
+        verrou global) : `retry_wait` est donc un CUMUL sur les workers, pas un temps
+        mural — à lire comme un ordre de grandeur de l'ampleur des échecs transitoires,
+        pas comme du temps de build perdu tel quel."""
+        delay = _backoff(attempt)
+        with self._throttle_lock:
+            self.retries += 1
+            self.retry_wait += delay
+        time.sleep(delay)
 
     def _wait_for_slot(self) -> None:
         """Réserve un départ de requête en respectant le débit global et un éventuel
@@ -120,8 +149,15 @@ class Client:
             self._wait_for_slot()
             try:
                 req = urllib.request.Request(url, headers=_HEADERS)
+                req.add_header("Accept-Encoding", "gzip")
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return resp.read()
+                    data = resp.read()
+                    # urllib ne décompresse pas : si le serveur a honoré notre
+                    # Accept-Encoding, on reçoit du gzip brut à détendre nous-mêmes
+                    # (sinon parse_feed verrait des octets binaires, pas du XML).
+                    if resp.headers.get("Content-Encoding") == "gzip":
+                        data = gzip.decompress(data)
+                    return data
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     return None
@@ -131,26 +167,28 @@ class Client:
                     # (« Retry-After: 0 » = réessaie tout de suite ; is-not-None et
                     # non `or`, car 0.0 est falsy et déclencherait le backoff à tort.)
                     last_cause = f"HTTP 429 {e.reason}"
+                    with self._throttle_lock:
+                        self.rate_limits += 1
                     ra = _parse_retry_after(e.headers)
                     self._pause_all(ra if ra is not None else _backoff(attempt))
                     continue
                 if 500 <= e.code < 600:
                     # Panne serveur ponctuelle : backoff LOCAL, pas de mur global.
                     last_cause = f"HTTP {e.code} {e.reason}"
-                    time.sleep(_backoff(attempt))
+                    self._backoff_sleep(attempt)
                     continue
                 log(f"  ! HTTP {e.code} {e.reason} sur {url}")
                 return None
             except (TimeoutError, socket.timeout):
                 last_cause = f"timeout ({self.timeout}s)"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
             except urllib.error.URLError as e:
                 # DNS, connexion refusée, TLS… : la cause utile est dans e.reason.
                 last_cause = f"URLError: {e.reason}"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
             except (ConnectionError, OSError) as e:
                 last_cause = f"{type(e).__name__}: {e}"
-                time.sleep(_backoff(attempt))
+                self._backoff_sleep(attempt)
         log(f"  ! échec définitif après {self.max_retries} essais "
             f"(dernière cause : {last_cause}) : {url}")
         return None
@@ -168,24 +206,58 @@ class Client:
             log(f"  ! XML invalide ({e}) sur {feed_url} (page {page})")
             return None
 
-    def all_entries(self, feed_url: str):
+    def all_entries(self, feed_url: str, parallel: bool = True):
         """Toutes les entries d'un feed, pages concaténées.
         Renvoie (totalentries, feed_updated, entries, complete) ou None si la 1re
         page échoue. `complete` est False si une page intermédiaire a échoué : la
-        liste est alors partielle (l'appelant peut le signaler)."""
+        liste est alors partielle (l'appelant peut le signaler).
+
+        La page 1 est récupérée seule (elle seule révèle `pagecount`). Les pages
+        2..N partent ensuite en parallèle si `parallel` (défaut), sinon en série.
+        Le throttle global (`_wait_for_slot`) espace de toute façon les départs à
+        `rps` : le parallélisme ne fait que recouvrir la latence, sans augmenter le
+        débit — le gain est réel sur un feed à nombreuses pages listé seul.
+
+        `parallel=False` est impératif quand l'appel tourne DÉJÀ dans un worker
+        (crawl des sous-feeds, cf. crawl._fetch_dirs) : sinon les pools
+        s'imbriqueraient (8 workers × 8 pages = 64 threads) pour un débit qui reste
+        plafonné à `rps`. La règle : parallélisme en largeur (frères) OU en
+        profondeur (pages), jamais les deux à la fois."""
         first = self.feed(feed_url, page=1)
         if first is None:
             return None
         pagecount, total, updated, entries = first
         entries = list(entries)
+        rest = range(2, pagecount + 1)
+
+        # L'ordre des pages n'est pas significatif : chaque appelant re-trie ou
+        # regroupe les entrées (cf. crawl._write_dir / _build_grouped). On concatène
+        # donc dans l'ordre d'arrivée. `updated` (date de repli du feed) est figé sur
+        # la page 1 : le build reste reproductible, indépendant du timing des threads.
+        if parallel and rest:
+            workers = min(self.workers, len(rest))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                results = as_completed(executor.submit(self.feed, feed_url, p)
+                                       for p in rest)
+                pages = [f.result() for f in results]
+        else:
+            pages = (self.feed(feed_url, page=p) for p in rest)
+
         complete = True
-        for page in range(2, pagecount + 1):
-            more = self.feed(feed_url, page=page)
+        for more in pages:
             if more is None:
                 complete = False
                 continue
-            updated = more[2] or updated
             entries.extend(more[3])
+
+        # Contrôle d'intégrité : le nombre d'entrées collectées doit égaler le
+        # totalEntries annoncé par le flux Atom. On ne le vérifie que si toutes les
+        # pages ont réussi (sinon l'écart est attendu et déjà signalé par `complete`
+        # = False). Un écart ici trahit une anomalie côté API (page dupliquée,
+        # entrée manquante, total erroné) malgré une pagination sans échec.
+        if complete and len(entries) != total:
+            log(f"  ! {feed_url} : {len(entries)} entrées collectées "
+                f"pour {total} annoncées (flux Atom)")
         return total, updated, entries, complete
 
 
