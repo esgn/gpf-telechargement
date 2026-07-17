@@ -161,8 +161,11 @@ def _prefetch_dirs(ctx: Ctx, dirs: list[dict]) -> dict[str, object]:
     if len(dirs) < 2:
         return {}
     workers = min(ctx.workers, len(dirs))
+    # Ces appels tournent DANS le pool de largeur : chacun pagine son sous-feed en
+    # série (parallel=False) pour ne pas imbriquer un 2e pool (cf. all_entries).
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {e["href"]: executor.submit(ctx.client.all_entries, e["href"])
+        futures = {e["href"]: executor.submit(ctx.client.all_entries, e["href"],
+                                              parallel=False)
                    for e in dirs}
         return {href: future.result() for href, future in futures.items()}
 

@@ -124,7 +124,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     que la navigation reste cohérente même quand un seul produit/thème est crawlé."""
     site = _site(cat)
     service = _service(cat)
-    client = Client(rps=rps)
+    client = Client(rps=rps, workers=workers)
     resources = fetch_capabilities(client, service)
     if resources is None:
         return 1
@@ -339,7 +339,7 @@ def main(argv=None) -> int:
             return 2
 
     if args.check:
-        return check_drift(Client(rps=args.rps), cat, _service(cat))
+        return check_drift(Client(rps=args.rps, workers=args.workers), cat, _service(cat))
 
     return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers)
 

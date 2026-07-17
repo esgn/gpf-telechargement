@@ -5,6 +5,7 @@ limiteur global : l'API plafonne à 10 requêtes/seconde par IP."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import email.utils
 import random
 import socket
@@ -71,7 +72,7 @@ class Client:
     trafic des autres empêcherait le compteur de redescendre (429 en boucle)."""
 
     def __init__(self, rps: float = 10, timeout: int = 30,
-                 max_retries: int = 5, page_size: int = 50):
+                 max_retries: int = 5, page_size: int = 50, workers: int = 8):
         # L'API plafonne à 10 req/s ; on borne dans (0, 10] pour éviter à la fois
         # une division par zéro et un throttle négatif (qui martèlerait l'API).
         rps = min(10.0, rps) if rps and rps > 0 else 10.0
@@ -79,6 +80,7 @@ class Client:
         self.timeout = timeout
         self.max_retries = max_retries
         self.page_size = page_size
+        self.workers = max(1, workers)   # requêtes en vol simultanées (throttle global inchangé)
         self.requests = 0
         self._last = 0.0
         self._retry_until = 0.0       # mur 429 global (time.monotonic), 0 = aucun
@@ -168,24 +170,58 @@ class Client:
             log(f"  ! XML invalide ({e}) sur {feed_url} (page {page})")
             return None
 
-    def all_entries(self, feed_url: str):
+    def all_entries(self, feed_url: str, parallel: bool = True):
         """Toutes les entries d'un feed, pages concaténées.
         Renvoie (totalentries, feed_updated, entries, complete) ou None si la 1re
         page échoue. `complete` est False si une page intermédiaire a échoué : la
-        liste est alors partielle (l'appelant peut le signaler)."""
+        liste est alors partielle (l'appelant peut le signaler).
+
+        La page 1 est récupérée seule (elle seule révèle `pagecount`). Les pages
+        2..N partent ensuite en parallèle si `parallel` (défaut), sinon en série.
+        Le throttle global (`_wait_for_slot`) espace de toute façon les départs à
+        `rps` : le parallélisme ne fait que recouvrir la latence, sans augmenter le
+        débit — le gain est réel sur un feed à nombreuses pages listé seul.
+
+        `parallel=False` est impératif quand l'appel tourne DÉJÀ dans un worker
+        (crawl des sous-feeds, cf. crawl._prefetch_dirs) : sinon les pools
+        s'imbriqueraient (8 workers × 8 pages = 64 threads) pour un débit qui reste
+        plafonné à `rps`. La règle : parallélisme en largeur (frères) OU en
+        profondeur (pages), jamais les deux à la fois."""
         first = self.feed(feed_url, page=1)
         if first is None:
             return None
         pagecount, total, updated, entries = first
         entries = list(entries)
+        rest = range(2, pagecount + 1)
+
+        # L'ordre des pages n'est pas significatif : chaque appelant re-trie ou
+        # regroupe les entrées (cf. crawl._write_dir / _build_grouped). On concatène
+        # donc dans l'ordre d'arrivée. `updated` (date de repli du feed) est figé sur
+        # la page 1 : le build reste reproductible, indépendant du timing des threads.
+        if parallel and rest:
+            workers = min(self.workers, len(rest))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                results = as_completed(executor.submit(self.feed, feed_url, p)
+                                       for p in rest)
+                pages = [f.result() for f in results]
+        else:
+            pages = (self.feed(feed_url, page=p) for p in rest)
+
         complete = True
-        for page in range(2, pagecount + 1):
-            more = self.feed(feed_url, page=page)
+        for more in pages:
             if more is None:
                 complete = False
                 continue
-            updated = more[2] or updated
             entries.extend(more[3])
+
+        # Contrôle d'intégrité : le nombre d'entrées collectées doit égaler le
+        # totalEntries annoncé par le flux Atom. On ne le vérifie que si toutes les
+        # pages ont réussi (sinon l'écart est attendu et déjà signalé par `complete`
+        # = False). Un écart ici trahit une anomalie côté API (page dupliquée,
+        # entrée manquante, total erroné) malgré une pagination sans échec.
+        if complete and len(entries) != total:
+            log(f"  ! {feed_url} : {len(entries)} entrées collectées "
+                f"pour {total} annoncées (flux Atom)")
         return total, updated, entries, complete
 
 
