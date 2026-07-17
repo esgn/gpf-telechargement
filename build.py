@@ -316,7 +316,7 @@ def main(argv=None) -> int:
     p.add_argument("--check", action="store_true", help="rapport de dérive catalogue ↔ API, sans rien construire")
     p.add_argument("--requests-per-second", type=float, default=10, dest="rps", help="débit visé (défaut : 10)")
     p.add_argument("--workers", type=int, default=8, dest="workers",
-                   help="nombre de workers HTTP de prefetch (défaut : 8)")
+                   help="nombre de requêtes de crawl en parallèle (défaut : 8)")
     args = p.parse_args(argv)
 
     if args.only and args.only_theme:

@@ -40,7 +40,7 @@ class Ctx:
         self.out_dir = out_dir
         self.footer = footer          # bloc <footer> HTML pré-rendu (identique partout)
         self.max_entries = max_entries
-        self.workers = workers        # workers HTTP du prefetch (throttle global du client)
+        self.workers = workers        # requêtes de crawl en parallèle (throttle global du client)
         self.pages = 0
         self.errors: list[str] = []      # réseau/données : rendent le build fatal
         self.warnings: list[str] = []    # éditorial : signalés mais non bloquants

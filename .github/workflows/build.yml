@@ -7,7 +7,16 @@ on:
     # minutes de build GitHub Actions.
     - cron: "0 2 */3 * *"
       timezone: "Europe/Paris"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      workers:
+        description: "Nombre de requêtes de crawl en parallèle"
+        required: false
+        default: "8"
+      requests_per_second:
+        description: "Débit visé (requêtes par seconde)"
+        required: false
+        default: "8"
 
 permissions:
   contents: read      # requis par actions/checkout (sinon "repository not found" sur repo privé)
@@ -36,7 +45,11 @@ jobs:
         run: python build.py --check || true
 
       - name: Générer le site (rebuild complet)
-        run: python build.py --out site
+        # Sur le run planifié, inputs.* est vide → fallback sur les défauts (8 / 8).
+        run: >
+          python build.py --out site
+          --workers ${{ inputs.workers || '8' }}
+          --requests-per-second ${{ inputs.requests_per_second || '8' }}
 
       - uses: actions/upload-pages-artifact@v3
         with:
