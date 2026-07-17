@@ -115,7 +115,7 @@ def _filtered_out(only: str | None, only_theme: str | None,
 
 
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
-              only_theme: str | None, rps: float) -> int:
+              only_theme: str | None, rps: float, workers: int = 8) -> int:
     """Reconstruit le site : chaque produit inclus est re-crawlé (pas de cache).
 
     `only` / `only_theme` restreignent le crawl à un produit / un thème (test) ;
@@ -134,7 +134,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     now_paris = datetime.now(ZoneInfo("Europe/Paris"))
     generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
-    ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"])
+    ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"], workers=workers)
 
     sections: dict[str, list[dict]] = {}   # theme_id → [{id, title, summary}, …]
     keep_themes: set[str] = set()
@@ -315,10 +315,15 @@ def main(argv=None) -> int:
                    help="ne construire que ce thème, par id (test ; ne purge pas le reste)")
     p.add_argument("--check", action="store_true", help="rapport de dérive catalogue ↔ API, sans rien construire")
     p.add_argument("--requests-per-second", type=float, default=10, dest="rps", help="débit visé (défaut : 10)")
+    p.add_argument("--workers", type=int, default=8, dest="workers",
+                   help="nombre de requêtes de crawl en parallèle (défaut : 8)")
     args = p.parse_args(argv)
 
     if args.only and args.only_theme:
         p.error("--only et --only-theme sont exclusifs (un produit OU un thème).")
+
+    if args.workers < 1:
+        p.error("--workers doit être ≥ 1.")
 
     try:
         cat = load_catalogue(args.catalogue)
@@ -336,7 +341,7 @@ def main(argv=None) -> int:
     if args.check:
         return check_drift(Client(rps=args.rps), cat, _service(cat))
 
-    return run_build(cat, args.out, args.only, args.only_theme, args.rps)
+    return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers)
 
 
 if __name__ == "__main__":
