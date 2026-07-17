@@ -180,6 +180,9 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
 
     log(f"\nTerminé : {built} produit(s) construit(s), {ctx.pages} page(s), "
         f"{client.requests} requête(s).")
+    if client.rate_limits:
+        log(f"  Rate-limit : {client.rate_limits} réponse(s) 429, "
+            f"{client.rate_limit_wait:.1f}s d'attente avant reprise.")
 
     if ctx.warnings:
         log(f"\nAvertissements ({len(ctx.warnings)}) :")

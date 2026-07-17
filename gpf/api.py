@@ -82,6 +82,8 @@ class Client:
         self.page_size = page_size
         self.workers = max(1, workers)   # requêtes en vol simultanées (throttle global inchangé)
         self.requests = 0
+        self.rate_limits = 0          # nombre de 429 rencontrés
+        self.rate_limit_wait = 0.0    # temps mural (s) passé bloqué par les murs 429
         self._last = 0.0
         self._retry_until = 0.0       # mur 429 global (time.monotonic), 0 = aucun
         self._throttle_lock = threading.Lock()
@@ -89,9 +91,19 @@ class Client:
     def _pause_all(self, delay: float) -> None:
         """Pose un mur 429 global : recule `_retry_until` d'au moins `delay` s pour
         que tous les workers observent la pause au prochain `_wait_for_slot`. On ne
-        raccourcit jamais un mur déjà plus lointain (max)."""
+        raccourcit jamais un mur déjà plus lointain (max).
+
+        `rate_limit_wait` n'accumule que le PROLONGEMENT effectif du mur au-delà de
+        ce qui était déjà planifié : deux 429 quasi simultanés dont les murs se
+        recouvrent ne comptent qu'une fois — c'est bien le temps mural d'attente,
+        pas la somme (trompeuse) vue par chaque worker bloqué en parallèle."""
         with self._throttle_lock:
-            self._retry_until = max(self._retry_until, time.monotonic() + delay)
+            now = time.monotonic()
+            new_until = now + delay
+            # Prolongement au-delà du mur EN COURS (max(mur restant, maintenant)) :
+            # si le mur précédent est déjà expiré, on ne compte pas le temps écoulé.
+            self.rate_limit_wait += max(0.0, new_until - max(self._retry_until, now))
+            self._retry_until = max(self._retry_until, new_until)
 
     def _wait_for_slot(self) -> None:
         """Réserve un départ de requête en respectant le débit global et un éventuel
@@ -133,6 +145,8 @@ class Client:
                     # (« Retry-After: 0 » = réessaie tout de suite ; is-not-None et
                     # non `or`, car 0.0 est falsy et déclencherait le backoff à tort.)
                     last_cause = f"HTTP 429 {e.reason}"
+                    with self._throttle_lock:
+                        self.rate_limits += 1
                     ra = _parse_retry_after(e.headers)
                     self._pause_all(ra if ra is not None else _backoff(attempt))
                     continue
