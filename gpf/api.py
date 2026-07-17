@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import email.utils
+import gzip
 import random
 import socket
 import sys
@@ -134,8 +135,15 @@ class Client:
             self._wait_for_slot()
             try:
                 req = urllib.request.Request(url, headers=_HEADERS)
+                req.add_header("Accept-Encoding", "gzip")
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                    return resp.read()
+                    data = resp.read()
+                    # urllib ne décompresse pas : si le serveur a honoré notre
+                    # Accept-Encoding, on reçoit du gzip brut à détendre nous-mêmes
+                    # (sinon parse_feed verrait des octets binaires, pas du XML).
+                    if resp.headers.get("Content-Encoding") == "gzip":
+                        data = gzip.decompress(data)
+                    return data
             except urllib.error.HTTPError as e:
                 if e.code == 404:
                     return None
@@ -197,7 +205,7 @@ class Client:
         débit — le gain est réel sur un feed à nombreuses pages listé seul.
 
         `parallel=False` est impératif quand l'appel tourne DÉJÀ dans un worker
-        (crawl des sous-feeds, cf. crawl._prefetch_dirs) : sinon les pools
+        (crawl des sous-feeds, cf. crawl._fetch_dirs) : sinon les pools
         s'imbriqueraient (8 workers × 8 pages = 64 threads) pour un débit qui reste
         plafonné à `rps`. La règle : parallélisme en largeur (frères) OU en
         profondeur (pages), jamais les deux à la fois."""
