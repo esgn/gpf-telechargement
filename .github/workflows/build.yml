@@ -31,12 +31,44 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5          # code + catalogue.json (aucune donnée)
+      - uses: actions/checkout@v7          # code + catalogue.json (aucune donnée)
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           # Aucun `pip install` : le projet n'utilise que la bibliothèque standard.
+
+      - name: Install WireGuard
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wireguard-tools
+
+      - name: IP GitHub de référence (avant tunnel)
+        run: echo "GH_IP=$(curl --fail --silent --show-error https://api.ipify.org || true)" >> "$GITHUB_ENV"
+
+      - name: Start VPN tunnel
+        env:
+          PR_WG_CFG: ${{ secrets.PR_WG_CFG }}
+        run: |
+          echo "$PR_WG_CFG" \
+            | base64 --decode \
+            | sudo tee /etc/wireguard/pr.conf > /dev/null
+          sudo chmod 600 /etc/wireguard/pr.conf
+          sudo wg-quick up pr
+
+      - name: Vérifier que le tunnel a pris (garde-fou anti-fuite)
+        # Pas d'IP de sortie fixe : on vérifie seulement que l'IP publique a CHANGÉ
+        # après montée du tunnel. Sinon le runner ressort sur l'IP GitHub partagée
+        # (retour des 429) → on échoue plutôt que crawler GPF depuis elle.
+        run: |
+          IP="$(curl --fail --silent --show-error https://api.ipify.org || true)"
+          echo "IP avant tunnel : ${GH_IP:-<indisponible>}"
+          echo "IP après tunnel : ${IP:-<indisponible>}"
+          if [ -z "$IP" ] || [ "$IP" = "$GH_IP" ]; then
+            echo "::error::L'IP de sortie n'a pas changé : le tunnel WireGuard n'a pas pris. Build stoppé pour ne pas crawler GPF depuis l'IP GitHub partagée." >&2
+            exit 1
+          fi
+          echo "Tunnel actif : sortie via $IP."
 
       - name: Tests (fonctions pures, sans réseau)
         run: python -m unittest
@@ -45,15 +77,19 @@ jobs:
         run: python build.py --check || true
 
       - name: Générer le site (rebuild complet)
-        # Sur le run planifié, inputs.* est vide → fallback sur les défauts (8 / 8).
         run: >
           python build.py --out site
           --workers ${{ inputs.workers || '8' }}
           --requests-per-second ${{ inputs.requests_per_second || '8' }}
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+      - name: Stop VPN tunnel
+        if: always()
+        run: |
+          sudo wg-quick down pr || true
 
   deploy:
     needs: build
@@ -63,4 +99,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
