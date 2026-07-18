@@ -37,12 +37,12 @@ jobs:
         with:
           python-version: "3.12"
           # Aucun `pip install` : le projet n'utilise que la bibliothèque standard.
-      
+
       - name: Install WireGuard
         run: |
           sudo apt-get update
           sudo apt-get install -y wireguard-tools
-      
+
       - name: IP GitHub de référence (avant tunnel)
         run: echo "GH_IP=$(curl --fail --silent --show-error https://api.ipify.org || true)" >> "$GITHUB_ENV"
 
@@ -85,7 +85,7 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
-      
+
       - name: Stop VPN tunnel
         if: always()
         run: |
