@@ -45,35 +45,57 @@ jobs:
           sudo apt-get update -o DPkg::Lock::Timeout=300
           sudo apt-get install -y -o DPkg::Lock::Timeout=300 wireguard-tools
 
+      - name: Résoudre l'IP de data.geopf.fr
+        run: |
+          IPS=""
+          for _ in 1 2 3 4 5; do
+            IPS="$(python3 -c 'import socket; print(",".join(ip+"/32" for ip in sorted({a[4][0] for a in socket.getaddrinfo("data.geopf.fr",443,socket.AF_INET)})))' 2>/dev/null || true)"
+            if [ -n "$IPS" ]; then break; fi
+            sleep 2
+          done
+          if [ -z "$IPS" ]; then
+            echo "::error::Résolution de data.geopf.fr impossible (aucune adresse)." >&2
+            exit 1
+          fi
+          echo "data.geopf.fr -> $IPS"
+          echo "GPF_ALLOWED_IPS=$IPS" >> "$GITHUB_ENV"
+
       - name: Start VPN tunnel
         env:
           PR_WG_CFG: ${{ secrets.PR_WG_CFG }}
         run: |
+          # On patche la conf wireguard pour forcer le split tunnelling:
+          #  - toute ligne « DNS = » est supprimée pour garder le DNS du runner
+          #  - « AllowedIPs » est forcé aux IPs de data.geopf.fr résolues plus haut
           echo "$PR_WG_CFG" \
             | base64 --decode \
+            | sed -E "/^[[:space:]]*DNS[[:space:]]*=/Id; s#^[[:space:]]*AllowedIPs[[:space:]]*=.*#AllowedIPs = ${GPF_ALLOWED_IPS}#I" \
             | sudo tee /etc/wireguard/pr.conf > /dev/null
           sudo chmod 600 /etc/wireguard/pr.conf
+          echo "AllowedIPs : $(sudo grep -E '^AllowedIPs = ' /etc/wireguard/pr.conf || echo ABSENT)"
+          echo "Lignes DNS restantes : $(sudo grep -ciE '^[[:space:]]*DNS[[:space:]]*=' /etc/wireguard/pr.conf)"
+          if ! sudo grep -qxF "AllowedIPs = ${GPF_ALLOWED_IPS}" /etc/wireguard/pr.conf; then
+            echo "::error::AllowedIPs n'a pas pu être forcé (conf inattendue)." >&2
+            exit 1
+          fi
           sudo wg-quick up pr
 
       - name: Vérifier que GPF sort par le tunnel (garde-fou anti-fuite)
-        # On ne compare plus d'IP publiques via un service tiers (fragile, et qui
-        # faisait "tourner" le step). On vérifie directement que la route vers GPF
-        # emprunte l'interface WireGuard `pr`. Valable en full-tunnel comme en
-        # split-tunnel (AllowedIPs = IP de GPF).
         run: |
-          GPF_IP="$(getent hosts data.geopf.fr | awk '{print $1}' | head -n1)"
-          echo "data.geopf.fr -> ${GPF_IP:-<non résolu>}"
-          if [ -z "$GPF_IP" ]; then
-            echo "::error::Résolution DNS de data.geopf.fr impossible." >&2
+          echo "AllowedIPs GPF : $GPF_ALLOWED_IPS"
+          fail=0
+          IFS=',' read -ra CIDRS <<< "$GPF_ALLOWED_IPS"
+          for cidr in "${CIDRS[@]}"; do
+            ip="${cidr%/*}"
+            dev="$(ip route get "$ip" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
+            echo "  $ip -> interface ${dev:-<inconnue>}"
+            [ "$dev" = "pr" ] || fail=1
+          done
+          if [ "$fail" != 0 ]; then
+            echo "::error::Au moins une IP GPF ne sort pas par le tunnel (pr). Build stoppé pour ne pas crawler depuis l'IP GitHub partagée." >&2
             exit 1
           fi
-          DEV="$(ip route get "$GPF_IP" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
-          echo "Route vers GPF via l'interface : ${DEV:-<inconnue>}"
-          if [ "$DEV" != "pr" ]; then
-            echo "::error::Le trafic vers GPF ne passe PAS par le tunnel (interface=$DEV). Build stoppé pour ne pas crawler depuis l'IP GitHub partagée." >&2
-            exit 1
-          fi
-          echo "OK : GPF routé via le tunnel WireGuard (pr)."
+          echo "OK : tout GPF routé via le tunnel WireGuard (pr)."
 
       - name: Tests (fonctions pures, sans réseau)
         run: python -m unittest
@@ -87,16 +109,11 @@ jobs:
           --workers ${{ inputs.workers || '8' }}
           --requests-per-second ${{ inputs.requests_per_second || '8' }}
 
-      - name: Couper le tunnel (avant upload GitHub)
-        run: sudo wg-quick down pr || true
-
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
-      # Filet de sécurité : coupe le tunnel même si un step précédent a échoué avant
-      # le teardown normal ci-dessus (idempotent, d'où le « || true »).
-      - name: Couper le tunnel (filet de sécurité)
+      - name: Couper le tunnel VPN
         if: always()
         run: sudo wg-quick down pr || true
 
