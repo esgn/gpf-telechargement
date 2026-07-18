@@ -331,6 +331,7 @@ _PAGE = Template("""<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="$favicon_href">
 <title>$title</title>
 $theme_init<link rel="stylesheet" href="$css_href">
 </head>
@@ -398,6 +399,7 @@ def md_to_html_inline(md: str) -> str:
 
 STYLESHEET = "style.css"   # nom du CSS partagé, à la racine du site
 ROBOTS = "robots.txt"      # fichier robots servi à la racine du site
+FAVICON = "favicon.svg"    # icône SVG servie à la racine du site
 
 
 def write_stylesheet(out_dir: str) -> None:
@@ -445,6 +447,27 @@ def write_robots(out_dir: str) -> None:
         f.write(_ROBOTS_TXT)
 
 
+# Favicon SVG (servie une fois à la racine, référencée en relatif par chaque page).
+# Tuile bleue (accent du site) + flèche de téléchargement blanche : sens direct (c'est
+# un index de téléchargement), autonome, lisible en 16 px, neutre (pas le logo IGN).
+_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0b57d0"/>
+  <g fill="none" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16 7 V19"/>
+    <path d="M10.5 14.5 L16 20 L21.5 14.5"/>
+    <path d="M8 24.5 H24"/>
+  </g>
+</svg>
+"""
+
+
+def write_favicon(out_dir: str) -> None:
+    """Écrit la favicon SVG à la racine du site (une seule fois)."""
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, FAVICON), "w", encoding="utf-8") as f:
+        f.write(_FAVICON_SVG)
+
+
 def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
                footer: str, out_dir: str) -> None:
     """Écrit une page. `out_dir` est la racine du site : il sert à calculer le chemin
@@ -454,7 +477,9 @@ def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
     rel = os.path.relpath(fs_dir, out_dir)     # "." à la racine, "a/b" en profondeur
     depth = 0 if rel == os.curdir else len(rel.split(os.sep))
     css_href = "../" * depth + STYLESHEET
-    page = _PAGE.substitute(title=esc(title), css_href=css_href, body=body,
+    favicon_href = "../" * depth + FAVICON
+    page = _PAGE.substitute(title=esc(title), css_href=css_href,
+                            favicon_href=favicon_href, body=body,
                             crumbs=crumbs, footer=footer,
                             theme_init=_THEME_INIT, theme_toggle=_THEME_TOGGLE)
     with open(os.path.join(fs_dir, "index.html"), "w", encoding="utf-8") as f:
@@ -503,7 +528,7 @@ def listing_table(rows: list[dict]) -> str:
 SPEC_ICONS = {
     "contenu": "📄",      # descriptif de contenu
     "livraison": "📦",    # descriptif de livraison
-    "fiche": "🔗",        # fiche produit / présentation
+    "fiche": "📋",        # fiche produit / présentation
     "guide": "📖",        # guide d'utilisation
     "tutoriel": "🧪",     # tutoriel technique
     "interface": "🖱️",    # interface interactive de téléchargement

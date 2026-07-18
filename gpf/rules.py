@@ -101,6 +101,21 @@ def zone_label(entry: dict) -> str:
     return f"{code} {name}" if name else (api_label or code)
 
 
+def unlabeled_zones(entries: list[dict]) -> list[dict]:
+    """Entrées dont l'API n'a PAS nommé la zone (label vide ou égal au code), une par
+    code (la première rencontrée). On leur applique ensuite un repli (ZONE_LABELS ou
+    fusion DROM §3), mais on expose la liste pour journaliser le fichier amont concerné
+    et le remonter au producteur. Fonction pure."""
+    seen: set[str] = set()
+    out = []
+    for e in entries:
+        code, lab = e["zone"], e["zone_label"]
+        if code and (not lab or lab == code) and code not in seen:
+            seen.add(code)
+            out.append(e)
+    return out
+
+
 def _is_metro_dept(term: str) -> bool:
     """« D » + 2 chiffres ≤ 95 (Corse D02A/D02B incluse) : département de métropole."""
     return (len(term) == 4 and term[0] == "D"

@@ -91,7 +91,7 @@ Champs d'un produit :
 | `summary`  | —      | Résumé éditorial (1-2 phrases, public technique).                                                                                                                                                                                                                                                                       |
 | `update`   | —      | Rythme de mise à jour, **texte libre** (`mensuel`, `annuel`…). Affiché sur la carte ; vide → ligne masquée. Pour un produit arrêté, y mettre le motif (ex. `Remplacé par ADMIN EXPRESS`) : il est repris dans le bandeau de la fiche.                                                                                   |
 | `producer` | —      | `id` d'un producteur déclaré dans `producers` (voir ci-dessous). Vide → aucun badge.                                                                                                                                                                                                                                    |
-| `specs`    | —      | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 🔗, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️. Type absent → 📄 ; type inconnu → 📄 + avertissement au build.                                       |
+| `specs`    | —      | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 📋, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️, `explorateur` 🧭. Type absent → 📄 ; type inconnu → 📄 + avertissement au build.                                       |
 | `include`  | —      | `false` pour masquer un produit sans le supprimer (défaut `true`).                                                                                                                                                                                                                                                      |
 | `retired`  | —      | `true` pour un **produit arrêté** (plus maintenu, souvent remplacé) : reste publié et affiché en ligne, mais sa carte est ambrée avec un badge « Arrêté » et sa fiche porte un bandeau. Défaut `false`. À ne pas confondre avec les **archives** (données anciennes toujours utiles), qui restent des produits normaux. |
 | `order`    | —      | Ordre d'affichage intra-thème, croissant (défaut 100). À `order` égal, l'**ordre du catalogue** est conservé (tri stable) : sans `order` explicite, les produits s'affichent donc dans leur ordre de déclaration dans `catalogue.json`.                                                                                 |
@@ -189,6 +189,7 @@ sont déclarées dans [`gpf/rules.py`](gpf/rules.py) et décrites en clair dans
 
 ## Reste à faire
 
+  - [ ] Finaliser l'affichage tout supports
   - [ ] Ajouter PVA
   - [ ] Ajouter documents d'urbanisme
  

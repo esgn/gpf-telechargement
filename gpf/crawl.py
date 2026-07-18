@@ -23,7 +23,7 @@ import shutil
 from . import render
 from .api import Client, log
 from .model import is_md5_file, last_segment, resource_id, slug
-from .rules import GROUP_LEVELS, canonicalize_zones, surviving_levels
+from .rules import GROUP_LEVELS, canonicalize_zones, surviving_levels, unlabeled_zones
 
 _VOLUME_RE = re.compile(r"^(.*)\.(\d{3,})$")  # « ….7z.001 » → base « ….7z », vol « 001 »
 _DEFAULT_HTTP_WORKERS = 8  # défaut si Ctx n'en reçoit pas (surchargeable via --workers)
@@ -149,6 +149,14 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
 
     # Classement zone/date/format si toutes les sous-ressources sont ainsi typées.
     if not files and dirs and all(e["zone"] and e["fmt"] for e in dirs):
+        # Zones que l'API livre SANS libellé (SBA, SMA, D986…) : on leur applique un
+        # repli d'affichage (ZONE_LABELS / fusion DROM), mais on journalise ICI le
+        # fichier amont concerné, pour pouvoir le remonter au producteur.
+        for e in unlabeled_zones(dirs):
+            log(f"  ⚠ {crumbs[-1][0]} : zone « {e['zone']} » sans libellé API "
+                f"→ ex. {e['title'] or last_segment(e['href'])} ({e['href']})")
+            ctx.warnings.append(f"{crumbs[-1][0]} : zone {e['zone']} sans libellé API "
+                                f"(ex. {e['href']})")
         # Fusion des DROM sous codes concurrents (D971→GLP…) hors conflit de date.
         dirs, conflicts = canonicalize_zones(dirs)
         for code in conflicts:

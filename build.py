@@ -178,6 +178,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     _copy_assets(out_dir)
     render.write_stylesheet(out_dir)          # feuille de style partagée (une fois)
     render.write_robots(out_dir)              # robots.txt : blocage des crawlers IA
+    render.write_favicon(out_dir)             # favicon SVG partagée (une fois)
     _write_theme_pages(ctx, cat, sections)
     _write_home(ctx, cat, sections, site)
 
