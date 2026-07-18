@@ -51,7 +51,6 @@ CSS = """
   --retired-card:#221e15; --retired-border:#3a3320; --retired-badge:#d9bd74;
 }
 * { box-sizing:border-box; }
-html { -webkit-text-size-adjust:100%; }
 body {
   margin:0 auto; max-width:64rem; padding:1.5rem clamp(1rem,4vw,2.5rem) 4rem;
   background:var(--bg); color:var(--fg);
