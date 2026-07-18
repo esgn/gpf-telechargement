@@ -45,9 +45,6 @@ jobs:
           sudo apt-get update -o DPkg::Lock::Timeout=300
           sudo apt-get install -y -o DPkg::Lock::Timeout=300 wireguard-tools
 
-      - name: IP GitHub de référence (avant tunnel)
-        run: echo "GH_IP=$(curl --fail --silent --show-error https://api.ipify.org || true)" >> "$GITHUB_ENV"
-
       - name: Start VPN tunnel
         env:
           PR_WG_CFG: ${{ secrets.PR_WG_CFG }}
@@ -58,16 +55,25 @@ jobs:
           sudo chmod 600 /etc/wireguard/pr.conf
           sudo wg-quick up pr
 
-      - name: Vérifier que le tunnel a pris (garde-fou anti-fuite)
+      - name: Vérifier que GPF sort par le tunnel (garde-fou anti-fuite)
+        # On ne compare plus d'IP publiques via un service tiers (fragile, et qui
+        # faisait "tourner" le step). On vérifie directement que la route vers GPF
+        # emprunte l'interface WireGuard `pr`. Valable en full-tunnel comme en
+        # split-tunnel (AllowedIPs = IP de GPF).
         run: |
-          IP="$(curl --fail --silent --show-error https://api.ipify.org || true)"
-          echo "IP avant tunnel : ${GH_IP:-<indisponible>}"
-          echo "IP après tunnel : ${IP:-<indisponible>}"
-          if [ -z "$IP" ] || [ "$IP" = "$GH_IP" ]; then
-            echo "::error::L'IP de sortie n'a pas changé : le tunnel WireGuard n'a pas pris. Build stoppé pour ne pas crawler GPF depuis l'IP GitHub partagée." >&2
+          GPF_IP="$(getent hosts data.geopf.fr | awk '{print $1}' | head -n1)"
+          echo "data.geopf.fr -> ${GPF_IP:-<non résolu>}"
+          if [ -z "$GPF_IP" ]; then
+            echo "::error::Résolution DNS de data.geopf.fr impossible." >&2
             exit 1
           fi
-          echo "Tunnel actif : sortie via $IP."
+          DEV="$(ip route get "$GPF_IP" 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"
+          echo "Route vers GPF via l'interface : ${DEV:-<inconnue>}"
+          if [ "$DEV" != "pr" ]; then
+            echo "::error::Le trafic vers GPF ne passe PAS par le tunnel (interface=$DEV). Build stoppé pour ne pas crawler depuis l'IP GitHub partagée." >&2
+            exit 1
+          fi
+          echo "OK : GPF routé via le tunnel WireGuard (pr)."
 
       - name: Tests (fonctions pures, sans réseau)
         run: python -m unittest
