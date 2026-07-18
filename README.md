@@ -187,7 +187,7 @@ sont déclarées dans [`gpf/rules.py`](gpf/rules.py) et décrites en clair dans
 - Données diffusées sous les conditions de la Géoplateforme ; ce dépôt n'indexe
   que des liens publics et ne redistribue aucune donnée.
 
-  ## Reste à faire
+## Reste à faire
 
   - [ ] Ajouter PVA
   - [ ] Ajouter documents d'urbanisme

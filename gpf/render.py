@@ -330,6 +330,7 @@ _PAGE = Template("""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
 <title>$title</title>
 $theme_init<link rel="stylesheet" href="$css_href">
 </head>
@@ -396,6 +397,7 @@ def md_to_html_inline(md: str) -> str:
 
 
 STYLESHEET = "style.css"   # nom du CSS partagé, à la racine du site
+ROBOTS = "robots.txt"      # fichier robots servi à la racine du site
 
 
 def write_stylesheet(out_dir: str) -> None:
@@ -408,6 +410,39 @@ def write_stylesheet(out_dir: str) -> None:
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, STYLESHEET), "w", encoding="utf-8") as f:
         f.write(CSS)
+
+
+# robots.txt : les moteurs classiques restent AUTORISÉS à crawler, pour qu'ils lisent
+# le « <meta name=robots content=noindex> » posé sur chaque page (c'est lui qui garantit
+# la non-indexation). Les crawlers d'IA / d'entraînement, eux, ne désindexent rien : on
+# les bloque explicitement — respect volontaire, sans effet sur les bots impolis.
+_ROBOTS_TXT = """\
+# Crawlers d'IA / entraînement (respect volontaire)
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: anthropic-ai
+User-agent: Google-Extended
+User-agent: CCBot
+User-agent: PerplexityBot
+User-agent: Bytespider
+User-agent: Amazonbot
+User-agent: Applebot-Extended
+User-agent: Meta-ExternalAgent
+Disallow: /
+
+User-agent: *
+Disallow:
+"""
+
+
+def write_robots(out_dir: str) -> None:
+    """Écrit robots.txt à la racine du site (une seule fois). Voir _ROBOTS_TXT pour la
+    stratégie : moteurs autorisés (pour qu'ils voient le noindex), bots IA bloqués."""
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, ROBOTS), "w", encoding="utf-8") as f:
+        f.write(_ROBOTS_TXT)
 
 
 def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
