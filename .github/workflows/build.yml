@@ -19,7 +19,7 @@ on:
         default: "8"
 
 permissions:
-  contents: read      # requis par actions/checkout (sinon "repository not found" sur repo privé)
+  contents: read
   pages: write
   id-token: write
 
@@ -39,9 +39,11 @@ jobs:
           # Aucun `pip install` : le projet n'utilise que la bibliothèque standard.
 
       - name: Install WireGuard
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y wireguard-tools
+          sudo apt-get update -o DPkg::Lock::Timeout=300
+          sudo apt-get install -y -o DPkg::Lock::Timeout=300 wireguard-tools
 
       - name: IP GitHub de référence (avant tunnel)
         run: echo "GH_IP=$(curl --fail --silent --show-error https://api.ipify.org || true)" >> "$GITHUB_ENV"
@@ -57,9 +59,6 @@ jobs:
           sudo wg-quick up pr
 
       - name: Vérifier que le tunnel a pris (garde-fou anti-fuite)
-        # Pas d'IP de sortie fixe : on vérifie seulement que l'IP publique a CHANGÉ
-        # après montée du tunnel. Sinon le runner ressort sur l'IP GitHub partagée
-        # (retour des 429) → on échoue plutôt que crawler GPF depuis elle.
         run: |
           IP="$(curl --fail --silent --show-error https://api.ipify.org || true)"
           echo "IP avant tunnel : ${GH_IP:-<indisponible>}"
@@ -82,14 +81,18 @@ jobs:
           --workers ${{ inputs.workers || '8' }}
           --requests-per-second ${{ inputs.requests_per_second || '8' }}
 
+      - name: Couper le tunnel (avant upload GitHub)
+        run: sudo wg-quick down pr || true
+
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
 
-      - name: Stop VPN tunnel
+      # Filet de sécurité : coupe le tunnel même si un step précédent a échoué avant
+      # le teardown normal ci-dessus (idempotent, d'où le « || true »).
+      - name: Couper le tunnel (filet de sécurité)
         if: always()
-        run: |
-          sudo wg-quick down pr || true
+        run: sudo wg-quick down pr || true
 
   deploy:
     needs: build
