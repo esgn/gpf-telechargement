@@ -20,7 +20,7 @@ Exemple d'URL WMS retournée dans la réponse WFS pour la dalle `LHD_FXX_0937_62
 
 Il suffit simplement d'utiliser ces URLs pour télécharger chaque dalle du produit **MNS LiDAR HD**.
 
-### A noter
+## A noter
 
 Vous remarquerez les `-0.25` et les `+0.25` appliqués à la Bounding Box pour extraire correctement une dalle aux coordonnées rondes.
 

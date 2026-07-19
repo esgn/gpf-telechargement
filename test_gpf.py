@@ -10,7 +10,8 @@ from gpf import atom, render
 from gpf.markdown import to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
-from gpf.crawl import _is_single_unit, _row_sort_key
+from gpf.crawl import (_group_bytes, _group_formats, _is_single_unit,
+                       _row_sort_key)
 from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
                        zone_label, zone_sort_key)
 from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
@@ -123,6 +124,26 @@ class TestAtom(unittest.TestCase):
         self.assertEqual(f["length"], 12345)
         self.assertEqual(f["md5"], "d41d8cd98f00b204e9800998ecf8427e")
 
+    def test_parse_feed_fmt_all_lists_every_format(self):
+        # entrée « produit » du capabilities : plusieurs <gpf_dl:format>. fmt = le
+        # premier, fmt_all = tous (base du garde-fou build._warn_uncurated_formats).
+        feed = b"""<feed xmlns="http://www.w3.org/2005/Atom"
+              xmlns:gpf_dl="https://data.geopf.fr/annexes/ressources/xsd/gpf_dl.xsd">
+          <entry><title>ADMIN-EXPRESS-COG-CARTO</title>
+            <link rel="alternate" type="application/atom+xml" href="https://x/resource/AE"/>
+            <gpf_dl:format term="GPKG" label="GPKG (GeoPackage)"/>
+            <gpf_dl:format term="SHP" label="SHP (Shapefile)"/>
+            <gpf_dl:format term="FlatGeoBuf" label="FlatGeoBuf"/>
+          </entry></feed>"""
+        _, _, _, entries = atom.parse_feed(feed)
+        self.assertEqual(entries[0]["fmt"], "GPKG")                 # premier
+        self.assertEqual(entries[0]["fmt_all"], ["GPKG", "SHP", "FlatGeoBuf"])
+        # entrée sans format (fichier) → fmt_all vide, pas d'erreur.
+        nofmt = b"""<feed xmlns="http://www.w3.org/2005/Atom">
+          <entry><title>f</title><link rel="alternate" href="https://x/a.7z"/></entry></feed>"""
+        _, _, _, e2 = atom.parse_feed(nofmt)
+        self.assertEqual(e2[0]["fmt_all"], [])
+
     def test_malformed_counts_dont_crash(self):
         # pagecount/totalentries non numériques → valeurs de repli, pas de ValueError
         feed = ('<feed xmlns="http://www.w3.org/2005/Atom" '
@@ -162,6 +183,97 @@ class TestCrawlHelpers(unittest.TestCase):
         rows.sort(key=_row_sort_key)   # la vraie fonction de production, pas une copie
         self.assertEqual([r["name"] for r in rows],
                          [f"x.7z.{n:03d}" for n in (1, 2, 3, 4, 5, 6)])
+
+    @staticmethod
+    def _sr_file(name, length):
+        return {"href": "https://x/" + name, "title": name,
+                "is_dir": False, "length": length}
+
+    def test_group_formats_distinct_sorted(self):
+        # libellés bruts de l'API en entrée ; _group_formats applique format_label,
+        # dédoublonne par code et trie (insensible à la casse).
+        entries = [{"fmt": "SHP", "fmt_label": "SHP (Shapefile)"},
+                   {"fmt": "GPKG", "fmt_label": "GPKG (GeoPackage)"},
+                   {"fmt": "SHP", "fmt_label": "SHP (Shapefile)"},   # doublon dédupliqué
+                   {"fmt": "", "fmt_label": ""}]                     # sans format : ignoré
+        self.assertEqual(_group_formats(entries), ["GeoPackage", "Shapefile"])
+
+    def test_group_formats_dedup_on_display_label(self):
+        # TIF et TIFF sont des codes distincts fondus sous « GeoTIFF » : la colonne
+        # ne doit l'afficher qu'une fois (déduplication sur le libellé, pas le code).
+        entries = [{"fmt": "TIF", "fmt_label": "TIF"},
+                   {"fmt": "TIFF", "fmt_label": "TIFF (Tagged Image File Format)"}]
+        self.assertEqual(_group_formats(entries), ["GeoTIFF"])
+
+    def test_group_bytes_sums_excluding_md5_and_dirs(self):
+        # deux sous-ressources dont les listings sont déjà en cache (après _fetch_dirs).
+        dir_listings = {
+            "https://x/a": (0, "", [self._sr_file("a.gpkg", 1000),
+                                    self._sr_file("a.gpkg.md5", 32),      # exclu
+                                    {"href": "https://x/sub", "title": "sub",
+                                     "is_dir": True, "length": None}], True),  # exclu
+            "https://x/b": (0, "", [self._sr_file("b.gpkg", 2000)], True),
+        }
+        entries = [{"href": "https://x/a"}, {"href": "https://x/b"}]
+        self.assertEqual(_group_bytes(entries, dir_listings), 3000)
+
+    def test_group_bytes_none_when_unknown(self):
+        # sous-ressource absente du cache (non pré-chargée) → aucune taille → None.
+        self.assertIsNone(_group_bytes([{"href": "https://x/missing"}], {}))
+        # présente mais toutes les `length` absentes du feed → None (cellule vide).
+        dl = {"https://x/a": (0, "", [self._sr_file("a.tif", None)], True)}
+        self.assertIsNone(_group_bytes([{"href": "https://x/a"}], dl))
+
+    def test_format_label_curated_and_fallback(self):
+        from gpf.rules import format_label
+        # codes curés → formulation choisie (le libellé API redondant est ignoré) ;
+        # chaque format est tranché à la main, aucune règle dérivable.
+        self.assertEqual(format_label({"fmt": "GPKG", "fmt_label": "GPKG (GeoPackage)"}),
+                         "GeoPackage")                          # garde le nom
+        self.assertEqual(format_label({"fmt": "SHP", "fmt_label": "SHP (Shapefile)"}),
+                         "Shapefile")                           # garde le nom
+        self.assertEqual(
+            format_label({"fmt": "SQL", "fmt_label": "SQL (Structured Query Language)"}),
+            "SQL")                                              # garde le sigle
+        # raster : TIF et TIFF (codes distincts) fondus sous « GeoTIFF ».
+        self.assertEqual(format_label({"fmt": "TIF", "fmt_label": "TIF"}), "GeoTIFF")
+        self.assertEqual(
+            format_label({"fmt": "TIFF", "fmt_label": "TIFF (Tagged Image File Format)"}),
+            "GeoTIFF")
+        # JP2 : le suffixe E080/E100 est conservé (dit ce qu'on télécharge) ; jp2 nu
+        # → « JPEG 2000 » générique.
+        self.assertEqual(
+            format_label({"fmt": "JP2-E100", "fmt_label": "JP2-E100 (JPEG2000 …)"}),
+            "JPEG 2000 (E100)")
+        self.assertEqual(format_label({"fmt": "JP2-E080", "fmt_label": "JP2-E080"}),
+                         "JPEG 2000 (E080)")
+        self.assertEqual(format_label({"fmt": "jp2", "fmt_label": "jp2"}), "JPEG 2000")
+        # alias fondu sous le libellé canonique.
+        self.assertEqual(format_label({"fmt": "FGB", "fmt_label": "FlatGeoBuf"}),
+                         "FlatGeoBuf")
+        # code non curé → libellé API tel quel (repli).
+        self.assertEqual(format_label({"fmt": "FOO", "fmt_label": "FOO (Bar)"}),
+                         "FOO (Bar)")
+        # ni mapping ni libellé API → le code seul.
+        self.assertEqual(format_label({"fmt": "XYZ", "fmt_label": ""}), "XYZ")
+
+    def test_uncurated_formats(self):
+        from gpf.rules import uncurated_formats
+        # seuls les codes hors FORMAT_LABELS ressortent ; le vide est ignoré.
+        self.assertEqual(
+            uncurated_formats({"GPKG", "TIF", "NOUVEAU", "AUTRE", ""}),
+            {"NOUVEAU", "AUTRE"})
+        self.assertEqual(uncurated_formats({"GPKG", "SHP", "JP2-E080"}), set())
+
+    def test_format_level_key_uppercases_url_keeps_label(self):
+        fmt_level = next(lv for lv in GROUP_LEVELS if lv.name == "format")
+        # code mixte : URL (term/slug) en majuscules, affichage en casse humaine.
+        term, label = fmt_level.key({"fmt": "FlatGeoBuf", "fmt_label": "FlatGeoBuf"})
+        self.assertEqual(term, "FLATGEOBUF")
+        self.assertEqual(label, "FlatGeoBuf")
+        # code déjà en majuscules : URL inchangée, libellé curé.
+        self.assertEqual(fmt_level.key({"fmt": "GPKG", "fmt_label": "GPKG (GeoPackage)"}),
+                         ("GPKG", "GeoPackage"))
 
     def test_group_levels_shape(self):
         # ordre des niveaux : zone → date → radiométrie → format
@@ -637,6 +749,47 @@ class TestRender(unittest.TestCase):
         self.assertIn('class="dir"', html)
         self.assertIn("2.0 Kio", html)
         self.assertIn("d41d8cd98f00b204e9800998ecf8427e", html)
+
+    def test_nav_table_formats_and_size(self):
+        rows = [
+            {"name": "Métropole", "href": "FXX/",
+             "formats": ["GeoPackage", "SHP"], "size": 2048},
+            {"name": "Martinique", "href": "MTQ/", "formats": ["SHP"], "size": 1024},
+        ]
+        html = render.nav_table(rows)
+        self.assertIn("<th>Formats disponibles</th>", html)
+        self.assertIn("<th>Taille</th>", html)
+        self.assertNotIn("MD5", html)              # colonne fichier, absente en nav
+        self.assertNotIn("Modifié le", html)
+        self.assertIn("GeoPackage, SHP", html)
+        self.assertIn("2.0 Kio", html)
+        self.assertIn('class="dir"', html)          # repères de dossier conservés
+
+    def test_nav_table_family_dir_shows_date_hides_empty_formats(self):
+        # Dossier famille/série (ex. cartes anciennes) : date « Modifié le » présente,
+        # taille agrégée, mais aucun format déclaré → colonne Formats masquée.
+        rows = [
+            {"name": "CASSINI", "href": "CASSINI/", "date": "2024-02-26",
+             "formats": None, "size": 4_509_715_660},
+            {"name": "ETATMAJOR", "href": "ETATMAJOR/", "date": "2024-03-02",
+             "formats": None, "size": 9_341_837_312},
+        ]
+        html = render.nav_table(rows)
+        self.assertIn("<th>Modifié le</th>", html)
+        self.assertIn("<th>Taille</th>", html)
+        self.assertNotIn("Formats disponibles", html)   # aucun format → colonne absente
+        self.assertIn("26 févr. 2024", html)             # date formatée
+        self.assertIn("4.2 Gio", html)
+
+    def test_nav_table_omits_formats_column_on_format_level(self):
+        # page de format : formats=None → pas de colonne « Formats disponibles »
+        # (la ligne EST le format), mais la taille agrégée reste affichée.
+        rows = [{"name": "GeoPackage", "href": "GPKG/", "formats": None, "size": 4096},
+                {"name": "SHP", "href": "SHP/", "formats": None, "size": 1024}]
+        html = render.nav_table(rows)
+        self.assertNotIn("Formats disponibles", html)
+        self.assertIn("<th>Taille</th>", html)
+        self.assertIn("4.0 Kio", html)
 
     def test_write_page_renders_full_document(self):
         # write_page est le point d'entrée réel : substitute lève si un $var manque.

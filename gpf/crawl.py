@@ -23,7 +23,8 @@ import shutil
 from . import render
 from .api import Client, log
 from .model import is_md5_file, last_segment, resource_id, slug
-from .rules import GROUP_LEVELS, canonicalize_zones, surviving_levels, unlabeled_zones
+from .rules import (GROUP_LEVELS, canonicalize_zones, format_label,
+                    surviving_levels, unlabeled_zones)
 
 _VOLUME_RE = re.compile(r"^(.*)\.(\d{3,})$")  # « ….7z.001 » → base « ….7z », vol « 001 »
 _DEFAULT_HTTP_WORKERS = 8  # défaut si Ctx n'en reçoit pas (surchargeable via --workers)
@@ -67,6 +68,17 @@ def _dir_row(name: str, href: str, date: str = "") -> dict:
     par render.listing_table) : pas de taille ni de MD5."""
     return {"name": name, "href": href, "is_dir": True,
             "date": date, "size": None, "md5": None}
+
+
+def _nav_row(name: str, href: str, formats: list[str] | None, size: int | None,
+             date: str = "") -> dict:
+    """Row d'un sous-dossier de NAVIGATION (niveau de groupement zone/date/radiométrie,
+    ou dossier famille/série), consommé par render.nav_table : au lieu de la taille/MD5
+    d'un fichier, on décrit ce qui se trouve DESSOUS — les formats disponibles et la
+    taille agrégée. `formats` vaut None quand la colonne n'a pas de sens (page de format,
+    où la ligne EST le format ; ou famille sans métadonnée de format). `date` (Modifié
+    le) n'est renseignée que pour les dossiers famille/série (feeds datés)."""
+    return {"name": name, "href": href, "formats": formats, "size": size, "date": date}
 
 
 def _row_sort_key(row: dict):
@@ -193,10 +205,20 @@ def _fetch_dirs(ctx: Ctx, dirs: list[dict]) -> dict[str, object]:
 
 
 def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
-    """Écrit un dossier « ordinaire » : fichiers directs + sous-dossiers récursifs
-    (avec aplatissement des enfants mono-unité), puis purge les dossiers obsolètes."""
-    rows = [_file_row(e, fu) for e, fu in files]
+    """Écrit un dossier : fichiers directs + sous-dossiers récursifs (avec aplatissement
+    des enfants mono-unité), puis purge les dossiers obsolètes. Deux rendus selon le
+    contenu :
+      - dossier de NAVIGATION pur (que des sous-dossiers, aucun fichier — famille/série
+        non typée zone/format, ex. « cartes anciennes ») → nav_table, avec taille agrégée
+        et formats disponibles quand ils existent, date « Modifié le » conservée ;
+      - dès qu'il y a des fichiers → listing de fichiers classique (listing_table).
+    La taille d'un sous-dossier est sommée depuis son feed déjà récupéré (dir_listings) :
+    exact quand une sous-ressource est un feed de fichiers (cas courant, API plate) ;
+    pour une famille à structure plus profonde, la taille retombe à None → colonne
+    masquée (jamais de total faux)."""
     dir_listings = dir_listings or {}
+    file_rows = [_file_row(e, fu) for e, fu in files]
+    dir_entries = []
     used, kept = set(), set()
     for e in dirs:
         name = e["title"] or resource_id(e)
@@ -205,13 +227,55 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
                                   _descend(crumbs, name), depth + 1,
                                   fetched=dir_listings.get(e["href"], _NOT_FETCHED))
         if kind == "files":
-            rows.extend(payload)
+            file_rows.extend(payload)          # enfant aplati → ses fichiers remontent
         else:
             kept.add(child)
-            rows.append(_dir_row(name, child + "/", e["updated"]))
-    rows.sort(key=_row_sort_key)
-    _emit(ctx, fs_dir, crumbs, rows)
+            dir_entries.append((name, child, e))
+    if dir_entries and not file_rows:
+        rows = [_nav_row(name, child + "/", _group_formats([e]) or None,
+                         _group_bytes([e], dir_listings), date=e["updated"])
+                for name, child, e in dir_entries]
+        rows.sort(key=lambda r: r["name"].lower())
+        _emit(ctx, fs_dir, crumbs, rows, table=render.nav_table)
+    else:
+        rows = file_rows + [_dir_row(name, child + "/", e["updated"])
+                            for name, child, e in dir_entries]
+        rows.sort(key=_row_sort_key)
+        _emit(ctx, fs_dir, crumbs, rows)
     prune_subdirs(fs_dir, keep=kept)
+
+
+def _group_formats(entries: list[dict]) -> list[str]:
+    """Libellés de format distincts présents sous un groupe (zone, date…), triés pour
+    un affichage stable. Alimente la colonne « Formats disponibles » des pages de
+    navigation (render.nav_table) : annoncer d'emblée ce qu'on trouvera plus bas plutôt
+    que d'avoir à y descendre. Libellés curés via rules.format_label (mêmes formulations
+    que les dossiers de format). Déduplication sur le LIBELLÉ affiché : deux codes fondus
+    sous un même nom (ex. TIF et TIFF → GeoTIFF) ne s'affichent qu'une fois. Fonction
+    pure."""
+    return sorted({format_label(e) for e in entries if e["fmt"]}, key=str.lower)
+
+
+def _group_bytes(entries: list[dict], dir_listings: dict) -> int | None:
+    """Taille agrégée d'un groupe (zone, date…) : somme des tailles des fichiers de
+    toutes ses sous-ressources. Les listings ont déjà été récupérés par _fetch_dirs
+    (aucune requête réseau ici) ; on additionne les `length` connues, en excluant les
+    sidecars .md5 et d'éventuels sous-dossiers. Renvoie None si aucune taille n'est
+    disponible (sous-ressource non pré-chargée, ou `length` absente du feed) — la
+    cellule reste alors vide plutôt que d'annoncer un total faux. Fonction pure."""
+    total, seen = 0, False
+    for e in entries:
+        got = dir_listings.get(e["href"])
+        if not got:                       # None (feed inaccessible) ou absent du cache
+            continue
+        _total, _updated, sub_entries, _complete = got
+        for f in sub_entries:
+            if f["is_dir"] or is_md5_file(f["href"], f["title"]):
+                continue
+            if f["length"]:
+                total += f["length"]
+                seen = True
+    return total if seen else None
 
 
 def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None,
@@ -264,20 +328,29 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None,
                        reverse=level.reverse):
         sslug = slug(term, used)
         label = labels[term]
+        grp = groups[term]
         _build_grouped(ctx, os.path.join(fs_dir, sslug),
-                       _descend(crumbs, label), groups[term], levels[1:], depth + 1,
+                       _descend(crumbs, label), grp, levels[1:], depth + 1,
                        product_id=product_id, dir_listings=dir_listings)
-        rows.append(_dir_row(label, sslug + "/"))
-    _emit(ctx, fs_dir, crumbs, rows)          # rows suit déjà l'ordre du niveau
+        # Page de navigation : formats disponibles (sauf sur le niveau format lui-même,
+        # où la ligne EST le format) + taille agrégée, tous deux calculés sur le groupe.
+        formats = None if level.name == "format" else _group_formats(grp)
+        rows.append(_nav_row(label, sslug + "/", formats,
+                             _group_bytes(grp, dir_listings)))
+    # rows suit déjà l'ordre du niveau ; nav_table (et non listing_table) : ces lignes
+    # sont des dossiers de groupement, décrits par formats + taille, pas des fichiers.
+    _emit(ctx, fs_dir, crumbs, rows, table=render.nav_table)
     prune_subdirs(fs_dir, keep={r["href"].rstrip("/") for r in rows})
 
 
-def _emit(ctx, fs_dir, crumbs, rows):
-    """Écrit le index.html d'un dossier de navigation : fil d'Ariane, remontée, table."""
+def _emit(ctx, fs_dir, crumbs, rows, *, table=render.listing_table):
+    """Écrit le index.html d'un dossier : fil d'Ariane, remontée, table. `table` est le
+    rendu de listing employé : render.listing_table pour des fichiers (défaut),
+    render.nav_table pour un niveau de navigation (groupement zone/date/…)."""
     body = ""
     if len(crumbs) > 1:
         body += '<a class="up" href="../">↑ Dossier parent</a>'
-    body += render.listing_table(rows)
+    body += table(rows)
     ctx.write_page(fs_dir, crumbs[-1][0], body, render.breadcrumb(crumbs))
 
 

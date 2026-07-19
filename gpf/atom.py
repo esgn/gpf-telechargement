@@ -32,8 +32,12 @@ def parse_feed(xml_bytes: bytes):
     """Parse un <feed> Atom → (pagecount, totalentries, feed_updated, entries).
 
     Chaque entry est un dict : title, id, updated, is_dir, href, length (int|None),
-    md5 (str|None), fmt/fmt_label, zone/zone_label, editionDate. Les entries sans
-    <link> exploitable sont ignorées. Lève ET.ParseError si le XML est tronqué."""
+    md5 (str|None), fmt/fmt_label, fmt_all, zone/zone_label, editionDate. Les entries
+    sans <link> exploitable sont ignorées. Lève ET.ParseError si le XML est tronqué.
+
+    `fmt` est le PREMIER format déclaré (le seul, au niveau sous-ressource) ; `fmt_all`
+    liste TOUS les <gpf_dl:format term> de l'entrée — utile au niveau capabilities, où
+    une entrée produit énumère l'ensemble de ses formats (cf. garde-fou du build)."""
     root = ET.fromstring(xml_bytes)
     pagecount = _int(_gpf_attr(root, "pagecount"), 1)
     totalentries = _int(_gpf_attr(root, "totalentries"), 0)
@@ -60,6 +64,8 @@ def parse_feed(xml_bytes: bytes):
             "md5": content if is_md5(content) else None,
             "fmt": _plain_attr(fmt, "term"),
             "fmt_label": _plain_attr(fmt, "label"),
+            "fmt_all": [t for f in e.findall("gpf_dl:format", NS)
+                        if (t := _plain_attr(f, "term"))],
             "zone": _plain_attr(zone, "term"),
             "zone_label": _plain_attr(zone, "label"),
             "editionDate": (e.findtext("gpf_dl:editionDate", default="",

@@ -206,6 +206,67 @@ def radiometry(entry: dict) -> tuple[str, str]:
     return ("", "")
 
 
+# Libellés d'affichage des formats. L'API mélange les conventions : code + expansion
+# redondante (« GPKG (GeoPackage) »), nom seul (« FlatGeoBuf »), code nu (« TIF »),
+# casse basse (« jpeg »), voire deux codes pour un même format (SHP/Shapefile,
+# FGB/FlatGeoBuf, PARQUET/GeoParquet). On fixe ici, format par format, la formulation
+# affichée — sans toucher au code (e["fmt"]), qui reste le nom de dossier et le segment
+# d'URL. La liste des codes possibles est celle du GetCapabilities du service
+# (data.geopf.fr/telechargement/capabilities, <gpf_dl:format term=…>) : ce tableau la
+# couvre entièrement. Un code absent garderait le libellé de l'API (repli).
+#
+# Fusions volontaires (plusieurs codes → un libellé) : sûres car aucun produit du
+# capabilities n'expose deux codes d'un même groupe (donc jamais deux dossiers de même
+# nom). Vérifié le 2026-07-19.
+FORMAT_LABELS = {
+    # Vecteur
+    "GPKG": "GeoPackage",
+    "SHP": "Shapefile",
+    "Shapefile": "Shapefile",        # alias de SHP (autre convention selon le produit)
+    "FlatGeoBuf": "FlatGeoBuf",
+    "FGB": "FlatGeoBuf",             # alias de FlatGeoBuf
+    "GeoParquet": "GeoParquet",
+    "PARQUET": "GeoParquet",         # alias de GeoParquet
+    "SQL": "SQL",                    # sigle : « Structured Query Language » n'aide pas
+    "GDB": "Geodatabase",
+    "PMTILES": "PMTiles",
+    "ZIP": "ZIP",
+    "HYB": "Format hybride",         # jeu mêlant plusieurs formats
+    # Raster
+    "TIF": "GeoTIFF",
+    "TIFF": "GeoTIFF",               # même format raster que TIF (codes distincts)
+    # JP2-E080 / E100 : on GARDE le suffixe (E100 = sans perte, E080 = compressé) —
+    # il dit ce qu'on télécharge. jp2 / JPEG200 n'ont pas de variante → JPEG 2000 nu.
+    "JP2-E080": "JPEG 2000 (E080)",
+    "JP2-E100": "JPEG 2000 (E100)",
+    "jp2": "JPEG 2000",
+    "JPEG200": "JPEG 2000",
+    "jpeg": "JPEG",
+    # Nuage de points (LiDAR)
+    "LAZ": "LAZ",
+    "COPC": "COPC",
+    # Grille altimétrique
+    "ASC": "ASC",                    # grille ASCII (extension .asc), nom courant
+}
+
+
+def format_label(entry: dict) -> str:
+    """Libellé d'affichage d'un format : formulation curée (FORMAT_LABELS) si le code
+    y figure, sinon le libellé de l'API tel quel, sinon le code. Ne modifie jamais le
+    code (e["fmt"]) : nom de dossier et segment d'URL restent inchangés. Fonction pure.
+    Sert au niveau de classement « format » (dossier + fil d'Ariane) comme à la colonne
+    « Formats disponibles » des pages de navigation (crawl._group_formats)."""
+    return FORMAT_LABELS.get(entry["fmt"]) or entry["fmt_label"] or entry["fmt"]
+
+
+def uncurated_formats(codes) -> set[str]:
+    """Parmi `codes`, ceux absents de FORMAT_LABELS : ils s'afficheraient avec le
+    libellé brut de l'API (repli). Sert au garde-fou du build, qui les signale pour
+    qu'on ajoute une formulation curée quand le service introduit un nouveau format.
+    Fonction pure."""
+    return {c for c in codes if c and c not in FORMAT_LABELS}
+
+
 # --------------------------------------------------------------------------- #
 # Règles de classement : zone → date d'édition → radiométrie → format.
 # Ordre = ordre des niveaux de dossiers, du plus haut au plus profond.
@@ -245,8 +306,11 @@ GROUP_LEVELS: list[GroupLevel] = [
         name="format",
         description="Ranger par format (GPKG, SHP, GeoTIFF…). Replié s'il n'y a "
                     "qu'un seul format : le dossier de format n'offre alors aucun "
-                    "choix (le format figure déjà dans le nom des fichiers).",
-        key=lambda e: (e["fmt"], e["fmt_label"] or e["fmt"]),
+                    "choix (le format figure déjà dans le nom des fichiers). Le code "
+                    "sert de nom de dossier, forcé en majuscules (FLATGEOBUF, "
+                    "GEOPARQUET…) pour une URL uniforme ; le libellé affiché reste "
+                    "curé (format_label), en casse humaine.",
+        key=lambda e: (e["fmt"].upper(), format_label(e)),
         reverse=False,
         collapse_when_single=True,
     ),

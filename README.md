@@ -1,4 +1,4 @@
-# Téléchargement Géoplateforme — index technique (non officiel)
+# Téléchargement Géoplateforme - index technique (non officiel)
 
 Générateur de **site statique** pour faciliter le téléchargement des données de
 l'IGN diffusées par le service de Téléchargement de la [Géoplateforme](https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/)
@@ -11,8 +11,8 @@ une **fiche** (résumé + liens vers ses spécifications officielles et ressourc
 Le site **n'héberge aucune donnée** : les liens de fichiers pointent directement
 vers `data.geopf.fr`. C'est un index navigable, plus lisible que le service brut.
 
-- **Zéro dépendance** — bibliothèque standard Python uniquement (Python ≥ 3.11).
-- **Front minimal** — HTML sémantique + une feuille CSS partagée (`style.css`, sobre,
+- **Zéro dépendance** - bibliothèque standard Python uniquement (Python ≥ 3.11).
+- **Front minimal** - HTML sémantique + une feuille CSS partagée (`style.css`, sobre,
   responsive, mode sombre automatique) ; seul JavaScript : un petit script inline
   pour le bouton de bascule de thème clair/sombre.
 - Hébergeable tel quel sur GitHub Pages (ou tout serveur statique).
@@ -72,30 +72,30 @@ python3 -m http.server 8000 --directory site   # puis http://localhost:8000/
 | `--check`                 | rapport de dérive catalogue ↔ API, sans rien construire                                      |
 | `--requests-per-second N` | débit visé (défaut 10 ; la limite API est ≤ 10)                                              |
 
-## Gérer les produits — [`catalogue.json`](catalogue.json)
+## Gérer les produits - [`catalogue.json`](catalogue.json)
 
 Le catalogue est un JSON **tolérant les commentaires `//` et les virgules
 finales** (pour rester éditable à la main). Trois blocs :
 
-- `themes` — la taxonomie, **dans l'ordre d'affichage**. Chaque thème : `id`, `label`.
-- `producers` — les producteurs affichés sur les cartes (voir ci-dessous).
-- `products` — la liste des produits.
+- `themes` - la taxonomie, **dans l'ordre d'affichage**. Chaque thème : `id`, `label`.
+- `producers` - les producteurs affichés sur les cartes (voir ci-dessous).
+- `products` - la liste des produits.
 
 Champs d'un produit :
 
 | Champ      | Oblig. | Rôle                                                                                                                                                                                                                                                                                                                    |
 | ---------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`       | ✅     | Nom **exact** de la ressource dans `…/resource/{id}` — clé de jointure avec l'API.                                                                                                                                                                                                                                      |
-| `title`    | —      | Titre affiché (repli sur le titre Atom).                                                                                                                                                                                                                                                                                |
-| `theme`    | —      | `id` d'un thème déclaré. Vide ou inconnu → « Autres jeux de données ».                                                                                                                                                                                                                                                  |
-| `summary`  | —      | Résumé éditorial (1-2 phrases, public technique).                                                                                                                                                                                                                                                                       |
-| `update`   | —      | Rythme de mise à jour, **texte libre** (`mensuel`, `annuel`…). Affiché sur la carte ; vide → ligne masquée. Pour un produit arrêté, y mettre le motif (ex. `Remplacé par ADMIN EXPRESS`) : il est repris dans le bandeau de la fiche.                                                                                   |
-| `producer` | —      | `id` d'un producteur déclaré dans `producers` (voir ci-dessous). Vide → aucun badge.                                                                                                                                                                                                                                    |
-| `specs`    | —      | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 📋, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️, `explorateur` 🧭. Type absent → 📄 ; type inconnu → 📄 + avertissement au build.                                       |
-| `include`  | —      | `false` pour masquer un produit sans le supprimer (défaut `true`).                                                                                                                                                                                                                                                      |
-| `retired`  | —      | `true` pour un **produit arrêté** (plus maintenu, souvent remplacé) : reste publié et affiché en ligne, mais sa carte est ambrée avec un badge « Arrêté » et sa fiche porte un bandeau. Défaut `false`. À ne pas confondre avec les **archives** (données anciennes toujours utiles), qui restent des produits normaux. |
-| `order`    | —      | Ordre d'affichage intra-thème, croissant (défaut 100). À `order` égal, l'**ordre du catalogue** est conservé (tri stable) : sans `order` explicite, les produits s'affichent donc dans leur ordre de déclaration dans `catalogue.json`.                                                                                 |
-| `page`     | —      | Nom d'un fichier Markdown dans [`pages/`](pages/) (ex. `mnt-lidarhd.md`). Si renseigné, l'entrée est une **page éditoriale** (contenu rédigé, non crawlé) au lieu d'un produit de l'API : sa fiche est générée depuis ce Markdown, et `--check` l'ignore.                                                               |
+| `id`       | ✅     | Nom **exact** de la ressource dans `…/resource/{id}` - clé de jointure avec l'API.                                                                                                                                                                                                                                      |
+| `title`    | -      | Titre affiché (repli sur le titre Atom).                                                                                                                                                                                                                                                                                |
+| `theme`    | -      | `id` d'un thème déclaré. Vide ou inconnu → « Autres jeux de données ».                                                                                                                                                                                                                                                  |
+| `summary`  | -      | Résumé éditorial (1-2 phrases, public technique).                                                                                                                                                                                                                                                                       |
+| `update`   | -      | Rythme de mise à jour, **texte libre** (`mensuel`, `annuel`…). Affiché sur la carte ; vide → ligne masquée. Pour un produit arrêté, y mettre le motif (ex. `Remplacé par ADMIN EXPRESS`) : il est repris dans le bandeau de la fiche.                                                                                   |
+| `producer` | -      | `id` d'un producteur déclaré dans `producers` (voir ci-dessous). Vide → aucun badge.                                                                                                                                                                                                                                    |
+| `specs`    | -      | Liste de `{ "label", "url", "type" }` : liens de spécification. `type` (optionnel) choisit l'emoji de la ligne : `contenu` 📄, `livraison` 📦, `fiche` 📋, `guide` 📖, `tutoriel` 🧪, `interface` 🖱️, `carte` 🗺️, `explorateur` 🧭. Type absent → 📄 ; type inconnu → 📄 + avertissement au build.                                       |
+| `include`  | -      | `false` pour masquer un produit sans le supprimer (défaut `true`).                                                                                                                                                                                                                                                      |
+| `retired`  | -      | `true` pour un **produit arrêté** (plus maintenu, souvent remplacé) : reste publié et affiché en ligne, mais sa carte est ambrée avec un badge « Arrêté » et sa fiche porte un bandeau. Défaut `false`. À ne pas confondre avec les **archives** (données anciennes toujours utiles), qui restent des produits normaux. |
+| `order`    | -      | Ordre d'affichage intra-thème, croissant (défaut 100). À `order` égal, l'**ordre du catalogue** est conservé (tri stable) : sans `order` explicite, les produits s'affichent donc dans leur ordre de déclaration dans `catalogue.json`.                                                                                 |
+| `page`     | -      | Nom d'un fichier Markdown dans [`pages/`](pages/) (ex. `mnt-lidarhd.md`). Si renseigné, l'entrée est une **page éditoriale** (contenu rédigé, non crawlé) au lieu d'un produit de l'API : sa fiche est générée depuis ce Markdown, et `--check` l'ignore.                                                               |
 
 ### Producteurs (logo / nom sur les cartes)
 
@@ -103,7 +103,7 @@ Le bloc `producers` déclare les producteurs **une seule fois** ; chaque produit
 en référence un (ou plusieurs) par son `id` via son champ `producer`. Un badge
 apparaît alors en haut à droite de la carte : **le logo s'il est déclaré, sinon le
 nom** en texte. Le champ `producer` accepte **une chaîne** (un producteur) ou **une
-liste** (coédition — les logos sont juxtaposés dans l'ordre déclaré) :
+liste** (coédition - les logos sont juxtaposés dans l'ordre déclaré) :
 
 ```jsonc
 "producers": [
@@ -121,7 +121,7 @@ liste** (coédition — les logos sont juxtaposés dans l'ordre déclaré) :
 | ---------------- | ------ | -------------------------------------------------------------------------------------------------- |
 | `id`             | ✅     | Référencé par le champ `producer` des produits.                                                    |
 | `name`           | ✅     | Nom affiché (et `alt` du logo).                                                                    |
-| `logo`           | —      | Chemin **relatif au dossier [`assets/`](assets/)**, ex. `logos/ign.svg`. Sans logo → nom en texte. |
+| `logo`           | -      | Chemin **relatif au dossier [`assets/`](assets/)**, ex. `logos/ign.svg`. Sans logo → nom en texte. |
 
 Les fichiers logo vivent dans `assets/` (typiquement `assets/logos/`) et sont
 **copiés tels quels** vers `site/assets/` à chaque build. Aucun asset externe :
@@ -142,7 +142,7 @@ vérifié) ; laissé vide, aucun badge.
 Ce sont des **liens** vers les descriptifs de contenu / de livraison publiés par
 l'IGN (on ne réhéberge rien). Les millésimes figurent dans les noms de fichiers
 PDF (`DC_BDTOPO_3-5.pdf`…) : ils sont à mettre à jour à la main quand l'IGN publie
-une nouvelle version — l'API de téléchargement ne fournit pas ces liens.
+une nouvelle version - l'API de téléchargement ne fournit pas ces liens.
 
 ## Mise à jour automatique (GitHub Pages)
 

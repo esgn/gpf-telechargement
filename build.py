@@ -33,6 +33,7 @@ from gpf.catalogue import Catalogue, CatalogueError, load_catalogue
 from gpf.crawl import Ctx, build_dir, prune_subdirs
 from gpf.markdown import to_html
 from gpf.model import fmt_datetime, resource_id, slug
+from gpf.rules import uncurated_formats
 from gpf.validate import check_drift
 
 DEFAULT_CATALOGUE = "catalogue.json"
@@ -115,6 +116,19 @@ def _filtered_out(only: str | None, only_theme: str | None,
                 or (only_theme and only_theme != theme))
 
 
+def _warn_uncurated_formats(ctx: Ctx, resources: list[dict]) -> None:
+    """Garde-fou : signale tout code de format exposé par le service mais absent de
+    rules.FORMAT_LABELS (il s'afficherait alors avec le libellé brut de l'API). La
+    liste des formats vient du capabilities (`fmt_all` de chaque ressource) — la
+    source de vérité — donc la vérification est complète même sous --only. Non
+    bloquant : rappel de compléter le mapping quand un nouveau format apparaît."""
+    codes = {c for r in resources for c in r.get("fmt_all", ())}
+    for code in sorted(uncurated_formats(codes)):
+        log(f"  ⚠ format « {code} » exposé par le service mais sans libellé curé "
+            f"(repli sur l'API) — à ajouter dans rules.FORMAT_LABELS.")
+        ctx.warnings.append(f"format « {code} » sans libellé curé (rules.FORMAT_LABELS)")
+
+
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
               only_theme: str | None, rps: float, workers: int = 8) -> int:
     """Reconstruit le site : chaque produit inclus est re-crawlé (pas de cache).
@@ -137,6 +151,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
     ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"], workers=workers)
+    _warn_uncurated_formats(ctx, resources)
 
     sections: dict[str, list[dict]] = {}   # theme_id → [{id, title, summary}, …]
     keep_themes: set[str] = set()

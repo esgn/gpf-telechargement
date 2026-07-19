@@ -183,6 +183,10 @@ table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-t
   background:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 265 323"><path fill="%23fff" stroke="%231a1a1a" stroke-width="14" d="M13 24.12v274.76c0 6.16 5.87 11.12 13.17 11.12H239c7.3 0 13.17-4.96 13.17-11.12V136.15S132.6 13 128.37 13H26.17C18.87 13 13 17.96 13 24.12z"/></svg>') no-repeat center/contain;
 }
 .up { display:inline-block; margin:.4rem 0 .2rem; }
+/* Listing de NAVIGATION (niveaux zone/date/radiométrie, cf. render.nav_table) :
+   réutilise table.listing. La colonne « Formats disponibles » résume ce qu'on
+   trouvera en dessous ; texte discret pour ne pas concurrencer le nom (lien). */
+.listing td.formats { color:var(--muted); }
 
 footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
          font-size:.85rem; color:var(--muted);
@@ -518,6 +522,49 @@ def listing_table(rows: list[dict]) -> str:
     return (
         '<div class="scroll"><table class="listing">'
         "<thead><tr><th>Nom</th><th>Modifié le</th><th>Taille</th><th>MD5</th></tr></thead>"
+        f'<tbody>{"".join(trs)}</tbody></table></div>')
+
+
+def nav_table(rows: list[dict]) -> str:
+    """Listing de NAVIGATION : les niveaux de groupement (zone, date, radiométrie).
+    Chaque ligne est un sous-dossier décrit non par la taille/MD5 d'un fichier —
+    absents à ces niveaux — mais par les FORMATS disponibles en dessous et la TAILLE
+    agrégée de ses fichiers (déjà connues du crawl, cf. crawl._group_formats /
+    _group_bytes). Objet distinct de listing_table : on ne liste pas des fichiers à
+    télécharger mais des dossiers où descendre.
+
+    rows : dicts {name, href, date (str|None), formats (list[str]|None), size (int|None)}.
+    Les colonnes « Modifié le », « Formats disponibles » et « Taille » n'apparaissent
+    que si au moins une ligne les renseigne : ainsi la page de format (où la ligne EST
+    le format) n'affiche pas de colonne formats redondante, et les pages zone/date (sans
+    date) restent à trois colonnes. Réutilise table.listing — mêmes styles et même
+    bascule « cartes empilées » sous 768px, via les data-label des cellules."""
+    show_date = any(r.get("date") for r in rows)
+    show_formats = any(r.get("formats") for r in rows)
+    show_size = any(r.get("size") is not None for r in rows)
+    head = ["<th>Nom</th>"]
+    if show_date:
+        head.append("<th>Modifié le</th>")
+    if show_formats:
+        head.append("<th>Formats disponibles</th>")
+    if show_size:
+        head.append("<th>Taille</th>")
+    trs = []
+    for r in rows:
+        # class="dir" : mêmes repères visuels (📁 + « / ») que les dossiers du listing.
+        cells = [f'<td><a href="{esc(r["href"])}" class="dir">{esc(r["name"])}</a></td>']
+        if show_date:
+            cells.append(f'<td data-label="Modifié le">{esc(fmt_date(r.get("date")))}</td>')
+        if show_formats:
+            fmts = ", ".join(esc(f) for f in (r.get("formats") or []))
+            cells.append(f'<td class="formats" data-label="Formats disponibles">{fmts}</td>')
+        if show_size:
+            size = human_size(r["size"]) if r.get("size") is not None else ""
+            cells.append(f'<td class="num" data-label="Taille">{size}</td>')
+        trs.append(f"<tr>{''.join(cells)}</tr>")
+    return (
+        '<div class="scroll"><table class="listing">'
+        f'<thead><tr>{"".join(head)}</tr></thead>'
         f'<tbody>{"".join(trs)}</tbody></table></div>')
 
 
