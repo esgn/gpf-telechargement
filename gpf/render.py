@@ -161,16 +161,33 @@ p.meta { font-size:.9rem; color:var(--muted); }
 
 /* Listing de fichiers/dossiers */
 table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-top:.5rem; }
+/* Filet anti-débordement : nom et MD5 étant en nowrap (voir plus bas), un tableau plus
+   large que son conteneur défile DANS ce cadre, sans jamais pousser la page en largeur.
+   Le mode « cartes » (≤768px) repasse .scroll en overflow-x:visible (rien ne déborde). */
+.scroll { overflow-x:auto; }
 .listing th, .listing td { padding:.5rem .6rem; border-bottom:1px solid var(--border);
                            text-align:left; vertical-align:top; }
 .listing th { color:var(--muted); font-weight:600; white-space:nowrap; }
 .listing tbody tr:hover { background:var(--row); }
-.listing td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+/* Taille : chiffres alignés à droite. Pas de nowrap → elle peut s'enrouler (« 4.0 Gio »
+   → deux lignes) pour céder la largeur au nom et au MD5 quand la place manque. */
+.listing td.num { text-align:right; font-variant-numeric:tabular-nums; }
 /* MD5 : hash de 32 car. gardé sur une seule ligne (jamais cassé). Le nom de
    fichier absorbe la contrainte de largeur et se coupe proprement (aux séparateurs
    _ - . via overflow-wrap:anywhere, plutôt qu'en plein milieu d'un mot). */
 .listing td.md5 code { color:var(--muted); white-space:nowrap; }
+/* Sur mobile (mode « cartes empilées » ci-dessous), une longue chaîne sans espace doit
+   pouvoir se couper aux séparateurs (_ - .) pour ne pas déborder l'écran étroit. */
 .listing td:first-child a { overflow-wrap:anywhere; }
+/* >768px (rendu tableau) : on protège NOM et MD5 (jamais coupés) ; Modifié le et Taille
+   cèdent (s'enroulent) quand la place manque. En layout auto, un contenu en nowrap
+   réclame toute sa largeur, un contenu enroulable se réduit à son mot le plus long : Nom
+   (nowrap ici) et MD5 (nowrap plus haut) gardent donc la priorité, la date et la taille
+   se tassent en premier. Scopé >768px : en mode cartes, le nom occupe toute la largeur
+   et DOIT pouvoir s'enrouler (écran étroit). */
+@media (min-width:769px) {
+  .listing td:first-child { white-space:nowrap; }
+}
 /* Dossier signalé par 📁 (préfixe) + le suffixe « / ». Fichier signalé par une
    petite icône « document » (SVG inline en data-URI, fond blanc + contour sombre)
    posée en ::before — définie une seule fois dans le CSS, donc légère même sur un
