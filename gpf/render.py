@@ -165,7 +165,7 @@ table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-t
    large que son conteneur défile DANS ce cadre, sans jamais pousser la page en largeur.
    Le mode « cartes » (≤768px) repasse .scroll en overflow-x:visible (rien ne déborde). */
 .scroll { overflow-x:auto; }
-.listing th, .listing td { padding:.5rem .6rem; border-bottom:1px solid var(--border);
+.listing th, .listing td { padding:.5rem; border-bottom:1px solid var(--border);
                            text-align:left; vertical-align:top; }
 .listing th { color:var(--muted); font-weight:600; white-space:nowrap; }
 .listing tbody tr:hover { background:var(--row); }

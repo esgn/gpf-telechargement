@@ -2,10 +2,7 @@ name: build-index
 
 on:
   schedule:
-    # Tous les 3 jours à 02:00 : rebuild complet du site (jours 1,4,7…,31 ; l'écart
-    # peut être plus court en fin de mois). Cadence réduite pour économiser les
-    # minutes de build GitHub Actions.
-    - cron: "0 2 */3 * *"
+    - cron: "0 2 * * *"
       timezone: "Europe/Paris"
   workflow_dispatch:
     inputs:

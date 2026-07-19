@@ -148,7 +148,7 @@ une nouvelle version - l'API de téléchargement ne fournit pas ces liens.
 
 [`.github/workflows/build.yml`](.github/workflows/build.yml) régénère et publie
 le site : un step `--check` signale la dérive du catalogue, puis génère le site et
-déploie sur Pages (cron tous les 3 jours + déclenchement manuel). Rien n'est committé dans ce dépôt.
+déploie sur Pages (cron journalier + déclenchement manuel). Rien n'est committé dans ce dépôt.
 
 Dans **Settings → Pages**, choisir **Source : GitHub Actions**.
 
