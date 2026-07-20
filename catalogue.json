@@ -257,7 +257,7 @@
     {
       "id": "PARCELLAIRE-EXPRESS", "title": "Parcellaire Express (PCI)", "theme": "parcellaire", "producer": "ign",
       "summary": "Parcellaire cadastral vecteur issu du Plan Cadastral Informatisé de la DGFiP, mis à disposition par l'IGN.",
-      "update": "trimestriel (suit le PCI DGFiP)",
+      "update": "Trimestrielle (suit le PCI DGFiP)",
       "specs": [
         { "label": "Descriptif de contenu - Parcellaire Express (PCI) (v1.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Parcellaire_Express_(PCI)_1-1.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - Parcellaire Express (PCI) (v1.1, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_Parcellaire_Express_(PCI)_1-1.pdf", "type": "livraison" }
