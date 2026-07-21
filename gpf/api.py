@@ -261,17 +261,20 @@ class Client:
         return total, updated, entries, complete
 
 
-def fetch_capabilities(client: Client, service: dict):
+def fetch_capabilities(client: Client, service: dict, *, label: str = "catalogue"):
     """Liste des ressources exposées par le service (niveau 1). None si le catalogue
     est inaccessible OU seulement partiellement récupéré : un catalogue tronqué
     ferait disparaître des produits entiers de la navigation (build) ou générerait
-    de fausses dérives « disparu de l'API » (validate), donc on le traite comme fatal.
+    de fausses dérives « disparu de l'API » (validate). La FATALITÉ est décidée par
+    l'appelant (le service de téléchargement principal est fatal ; le service
+    cloud-native, secondaire, est traité en non bloquant). `label` nomme le service
+    dans le message d'échec (deux services étant désormais interrogés).
     `service` : dict {base_url, capabilities_path} (cf. build._service)."""
     got = client.all_entries(service["base_url"] + service["capabilities_path"])
     if got is None:
-        log("ERREUR : catalogue inaccessible — abandon.")
+        log(f"  ! {label} inaccessible.")
         return None
     if not got[3]:
-        log("ERREUR : catalogue partiellement récupéré (une page a échoué) — abandon.")
+        log(f"  ! {label} partiellement récupéré (une page a échoué).")
         return None
     return got[2]

@@ -5,9 +5,9 @@
 
 import unittest
 
-from build import _cards
-from gpf import atom, render
-from gpf.markdown import to_html
+from build import _cards, _splice_cloud, _CLOUD_START, _CLOUD_END
+from gpf import atom, cloud, render
+from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
 from gpf.crawl import (_group_bytes, _group_formats, _is_single_unit,
@@ -1010,6 +1010,243 @@ class TestMarkdown(unittest.TestCase):
     def test_blank_lines_separate_blocks(self):
         html = to_html("# T\n\npara\n\n- item")
         self.assertEqual(html, "<h1>T</h1>\n<p>para</p>\n<ul><li>item</li></ul>")
+
+    def test_fenced_code_block(self):
+        # bloc clôturé ``` → <pre><code>, multi-lignes préservées, blocs voisins intacts
+        html = to_html("avant\n\n```sql\nSELECT *\nFROM t\n```\n\naprès")
+        self.assertIn("<pre><code>SELECT *\nFROM t</code></pre>", html)
+        self.assertIn("<p>avant</p>", html)
+        self.assertIn("<p>après</p>", html)
+
+    def test_fenced_code_is_literal(self):
+        # contenu NON réinterprété (titre/gras/lien) ni joint en paragraphe. La ligne
+        # « # … » est colorée comme COMMENTAIRE (span vert), pas transformée en titre
+        # <h1> ; « **gras** » reste littéral (pas de <strong>).
+        html = to_html("```\n# pas un titre\n**pas gras** [x](u)\n```")
+        self.assertIn('<pre><code><span class="tok-comment"># pas un titre</span>\n'
+                      "**pas gras** [x](u)</code></pre>", html)
+        self.assertNotIn("<strong>", html)
+        self.assertNotIn("<h1>", html)
+
+    def test_fenced_code_escapes_html(self):
+        html = to_html("```\n<script>a & b</script>\n```")
+        self.assertIn("&lt;script&gt;a &amp; b&lt;/script&gt;", html)
+        self.assertNotIn("<script>", html)
+
+    def test_fenced_code_unclosed(self):
+        # fence non refermée en fin de source → clôturée proprement
+        self.assertEqual(to_html("```\nx\ny"), "<pre><code>x\ny</code></pre>")
+
+    def test_split_sections(self):
+        intro, secs = split_sections(
+            "préambule\n\n## DuckDB\ntexte\n\n```sql\n## pas un séparateur\n"
+            "SELECT 1\n```\n\n## Python\n```python\nx = 1\n```")
+        self.assertIn("<p>préambule</p>", intro)
+        self.assertEqual([t for t, _ in secs], ["DuckDB", "Python"])
+        # le « ## » DANS le bloc de code n'a PAS créé de section (2 sections, pas 3)
+        self.assertIn("## pas un séparateur", secs[0][1])
+        self.assertIn("<pre><code>", secs[0][1])
+
+    def test_fenced_code_comment_highlight(self):
+        # lignes de commentaire (# ou --) enveloppées d'un span vert ; code normal non
+        sql = to_html("```sql\n-- un commentaire\nSELECT 1;\n```")
+        self.assertIn('<span class="tok-comment">-- un commentaire</span>', sql)
+        self.assertNotIn('<span class="tok-comment">SELECT 1;', sql)
+        self.assertIn('<span class="tok-comment"># note</span>',
+                      to_html("```python\n# note\nx = 1\n```"))
+        # un flag « -spat » (un seul tiret) n'est PAS un commentaire
+        self.assertNotIn("tok-comment", to_html("```bash\n  -spat 1 2 3 4\n```"))
+
+    def test_split_sections_no_heading(self):
+        # aucun « ## » : tout part en intro, aucune section
+        intro, secs = split_sections("juste du texte\n\nsur deux blocs")
+        self.assertEqual(secs, [])
+        self.assertIn("juste du texte", intro)
+
+
+class TestCloud(unittest.TestCase):
+    def test_layer_name_strips_cloud_extensions(self):
+        self.assertEqual(cloud.layer_name("https://x/troncon_de_route.parquet"),
+                         "troncon_de_route")
+        self.assertEqual(cloud.layer_name("https://x/pylone.fgb.zip"), "pylone")
+        self.assertEqual(cloud.layer_name("https://x/contours_iris.fgb"), "contours_iris")
+        self.assertEqual(cloud.layer_name("https://x/foo.zip"), "foo")
+        # extension inconnue : segment gardé tel quel (pas de coupe hasardeuse)
+        self.assertEqual(cloud.layer_name("https://x/lisezmoi.txt"), "lisezmoi.txt")
+
+    @staticmethod
+    def _leaf(fmt, date, href):
+        return {"is_dir": True, "fmt": fmt, "fmt_label": fmt, "editionDate": date,
+                "href": href, "zone_label": "France entière"}
+
+    def test_latest_leaf_per_format_picks_latest_and_orders(self):
+        entries = [
+            self._leaf("GeoParquet", "2025-06-15", "https://x/pq-2025"),
+            self._leaf("GeoParquet", "2026-06-15", "https://x/pq-2026"),   # plus récent
+            self._leaf("FlatGeoBuf", "2026-06-15", "https://x/fgb"),
+            self._leaf("geoflatbuffer/sozip", "2026-06-15", "https://x/sozip"),  # non surfacé
+            {"is_dir": False, "fmt": "GeoParquet", "fmt_label": "GeoParquet",
+             "editionDate": "2027-01-01", "href": "https://x/file"},          # fichier : ignoré
+        ]
+        out = cloud.latest_leaf_per_format(entries)
+        # GeoParquet avant FlatGeoBuf (ordre CLOUD_FORMAT_LABELS) ; sozip écarté.
+        self.assertEqual([lbl for lbl, _ in out], ["GeoParquet", "FlatGeoBuf"])
+        # l'édition la plus récente est retenue pour GeoParquet.
+        self.assertEqual(out[0][1]["href"], "https://x/pq-2026")
+
+    def test_has_surfaced_format(self):
+        # badge conditionné aux formats déclarés au capabilities (fmt_all), même règle
+        # que l'encart : GeoParquet / FlatGeoBuf (et leurs alias) oui, le reste non.
+        self.assertTrue(cloud.has_surfaced_format({"fmt_all": ["FlatGeoBuf", "GeoParquet"]}))
+        self.assertTrue(cloud.has_surfaced_format({"fmt_all": ["PARQUET"]}))   # alias
+        self.assertFalse(cloud.has_surfaced_format({"fmt_all": ["PMTILES"]}))
+        self.assertFalse(cloud.has_surfaced_format({"fmt_all": ["geoflatbuffer/sozip"]}))
+        self.assertFalse(cloud.has_surfaced_format({}))               # fmt_all absent
+
+    def test_latest_leaf_per_format_alias_folded(self):
+        # PARQUET / FGB (alias) sont fondus sous GeoParquet / FlatGeoBuf via format_label.
+        out = cloud.latest_leaf_per_format([
+            self._leaf("PARQUET", "2026-01-01", "https://x/pq"),
+            self._leaf("FGB", "2026-01-01", "https://x/fgb")])
+        self.assertEqual([lbl for lbl, _ in out], ["GeoParquet", "FlatGeoBuf"])
+
+    def test_latest_leaf_per_format_pinned_edition(self):
+        entries = [
+            self._leaf("GeoParquet", "2026-06-15", "https://x/pq-new"),
+            self._leaf("GeoParquet", "2026-03-15", "https://x/pq-pin"),
+            self._leaf("FlatGeoBuf", "2026-06-15", "https://x/fgb-new"),  # pas de 2026-03-15
+        ]
+        pinned = {l: e["href"] for l, e in
+                  cloud.latest_leaf_per_format(entries, "2026-03-15")}
+        self.assertEqual(pinned["GeoParquet"], "https://x/pq-pin")     # édition épinglée
+        self.assertEqual(pinned["FlatGeoBuf"], "https://x/fgb-new")    # repli : épingle absente
+        # sans épingle → la plus récente pour chaque format
+        latest = {l: e["href"] for l, e in cloud.latest_leaf_per_format(entries)}
+        self.assertEqual(latest["GeoParquet"], "https://x/pq-new")
+
+
+class TestCloudBlock(unittest.TestCase):
+    LAYERS = {
+        "formats": [{"label": "GeoParquet", "edition": "2026-06-15"},
+                    {"label": "FlatGeoBuf", "edition": "2026-06-15"}],
+        "zone_label": "France entière",
+        "edition": "2026-06-15",
+        "couches": [
+            {"name": "cours_d_eau",
+             "urls": {"GeoParquet": "https://x/cours_d_eau.parquet",
+                      "FlatGeoBuf": "https://x/cours_d_eau.fgb.zip"}},
+            {"name": "troncon_de_route",           # présent en GeoParquet seulement
+             "urls": {"GeoParquet": "https://x/troncon_de_route.parquet"}},
+        ],
+    }
+
+    def test_cloud_block_structure(self):
+        html = render.cloud_block(self.LAYERS)
+        self.assertIn('class="cloud-dt"', html)
+        self.assertIn("Cloud-native", html)
+        self.assertIn("Couches disponibles (2)", html)   # décompte des couches
+        self.assertIn("France entière", html)
+        self.assertIn("dernière édition 2026-06-15", html)
+        # bouton de copie (pas un lien) portant l'URL en data-url
+        self.assertIn('data-url="https://x/cours_d_eau.parquet"', html)
+        self.assertIn('data-url="https://x/cours_d_eau.fgb.zip"', html)
+        self.assertIn("cloud-copy", html)
+        # couche absente d'un format → cellule « — », pas de bouton fantôme
+        self.assertIn('class="cloud-none"', html)
+        # jamais de lien <a> cliquable vers un .parquet (téléchargement intégral évité)
+        self.assertNotIn('href="https://x/troncon_de_route.parquet"', html)
+
+    def test_cloud_block_help_link_optional(self):
+        self.assertNotIn("exemples et tutoriels", render.cloud_block(self.LAYERS))
+        with_link = render.cloud_block(self.LAYERS, help_url="https://tuto")
+        self.assertIn('href="https://tuto"', with_link)
+        self.assertIn("exemples et tutoriels", with_link)
+
+    def test_cloud_block_empty_layers(self):
+        self.assertEqual(render.cloud_block({}), "")
+        self.assertEqual(render.cloud_block({"formats": [], "couches": []}), "")
+
+    def test_cloud_block_tuto_tabs(self):
+        # sans tuto_tabs : pas d'onglets
+        self.assertNotIn("cloud-tabs", render.cloud_block(self.LAYERS))
+        # avec tuto_tabs : onglets CSS (radios + labels, 1er coché) + panneaux
+        with_tabs = render.cloud_block(self.LAYERS, tuto_tabs=[
+            ("DuckDB", "<pre><code>a</code></pre>"),
+            ("Python", "<pre><code>b</code></pre>")])
+        self.assertIn('<details class="cloud-tuto">', with_tabs)   # section repliable
+        self.assertIn("Comment interroger ces couches", with_tabs)
+        self.assertIn('class="cloud-tabs"', with_tabs)
+        self.assertEqual(with_tabs.count("cloud-tab-radio"), 2)   # 2 onglets
+        self.assertIn(" checked>", with_tabs)                     # 1er coché
+        self.assertIn(">DuckDB</label>", with_tabs)
+        self.assertIn("<pre><code>a</code></pre>", with_tabs)
+        # les onglets sont AU-DESSUS de la liste des couches
+        self.assertLess(with_tabs.index('class="cloud-tabs"'),
+                        with_tabs.index('class="cloud-couches"'))
+
+    def test_card_grid_cloud_badge(self):
+        html = render._card_grid([
+            {"href": "X/", "title": "X", "summary": "s", "cloud_native": True}])
+        self.assertIn('class="cloud-badge"', html)
+        self.assertIn("Cloud-native", html)
+        self.assertIn('title="Interrogeable à distance', html)   # infobulle au survol
+        # absent quand le produit n'a pas d'accès direct
+        self.assertNotIn("cloud-badge", render._card_grid(
+            [{"href": "X/", "title": "X", "summary": "s"}]))
+
+
+class TestServices(unittest.TestCase):
+    def _load(self, blob: str):
+        import os
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(blob)
+            return load_catalogue(path)
+        finally:
+            os.remove(path)
+
+    def test_services_parsed(self):
+        cat = self._load('{"services":{"download":{"base_url":"https://d"},'
+                         '"chunk":{"base_url":"https://c"}},"themes":[],"products":[]}')
+        self.assertEqual(cat.services["download"]["base_url"], "https://d")
+        self.assertEqual(cat.services["chunk"]["base_url"], "https://c")
+
+    def test_legacy_service_becomes_download(self):
+        # ancien schéma « service » unique → exposé comme services["download"]
+        cat = self._load('{"service":{"base_url":"https://old"},'
+                         '"themes":[],"products":[]}')
+        self.assertEqual(cat.services["download"]["base_url"], "https://old")
+
+    def test_product_cloud_native_default_and_set(self):
+        self.assertEqual(Product({"id": "X"}).cloud_native, "")
+        self.assertEqual(Product({"id": "X", "cloud_native": "X_PQT"}).cloud_native,
+                         "X_PQT")
+
+    def test_product_cloud_edition_default_and_set(self):
+        self.assertEqual(Product({"id": "X"}).cloud_edition, "")
+        self.assertEqual(Product({"id": "X", "cloud_edition": "2026-03-15"}).cloud_edition,
+                         "2026-03-15")
+
+    def test_real_catalogue_cloud_native_declared(self):
+        # le vrai catalogue déclare au moins un accès direct (BD TOPO, Contours IRIS…)
+        cat = load_catalogue("catalogue.json")
+        self.assertTrue(any(p.cloud_native for p in cat.products))
+        self.assertEqual(cat.get("BDTOPO").cloud_native, "BDTOPO_PQT")
+
+
+class TestCloudOnly(unittest.TestCase):
+    def test_splice_cloud_replaces_between_markers(self):
+        # --cloud-only remplace ce qui est entre les marqueurs, sans toucher au reste.
+        page = f"<main>EN-TETE{_CLOUD_START}VIEUX{_CLOUD_END}<hr>ARBRE</main>"
+        self.assertEqual(_splice_cloud(page, "NEUF"),
+                         f"<main>EN-TETE{_CLOUD_START}NEUF{_CLOUD_END}<hr>ARBRE</main>")
+
+    def test_splice_cloud_absent_or_incoherent(self):
+        # marqueurs absents → None (le patch ne réécrit rien) ; fin avant début → None
+        self.assertIsNone(_splice_cloud("<main>sans marqueurs</main>", "NEUF"))
+        self.assertIsNone(_splice_cloud(_CLOUD_END + "x" + _CLOUD_START, "NEUF"))
 
 
 if __name__ == "__main__":

@@ -35,6 +35,10 @@ CSS = """
   /* Carte de produit arrêté : fond et bordure ambrés discrets pour la distinguer
      sans crier ; le badge « Arrêté » reprend ces mêmes tons plus soutenus. */
   --retired-card:#fbf6ec; --retired-border:#e7d9b8; --retired-badge:#8a6d1f;
+  /* Encart « accès direct » cloud-native + badge de carte : fond bleuté dérivé de
+     l'accent, distinct du flux normal sans le concurrencer. */
+  --panel-bg:#f1f6fe; --panel-border:#cadffb;
+  --code-comment:#137333;   /* commentaires des blocs de code, en vert */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -42,6 +46,8 @@ CSS = """
     --link:#8ab4ff; --row:#1a1e24; --code:#20252d; --accent:#8ab4ff;
     --card:#191d23; --shadow:none;
     --retired-card:#221e15; --retired-border:#3a3320; --retired-badge:#d9bd74;
+    --panel-bg:#161d2a; --panel-border:#2c3b52;
+    --code-comment:#7ee787;
   }
 }
 :root[data-theme="dark"] {
@@ -49,6 +55,8 @@ CSS = """
   --link:#8ab4ff; --row:#1a1e24; --code:#20252d; --accent:#8ab4ff;
   --card:#191d23; --shadow:none;
   --retired-card:#221e15; --retired-border:#3a3320; --retired-badge:#d9bd74;
+  --panel-bg:#161d2a; --panel-border:#2c3b52;
+  --code-comment:#7ee787;
 }
 * { box-sizing:border-box; }
 body {
@@ -72,6 +80,38 @@ main h1 + p:not(.lead) { margin-top:1rem; }
 hr { border:0; border-top:1px solid var(--border); margin:2rem 0; }
 code { background:var(--code); padding:.1em .35em; border-radius:4px;
        font-size:.85em; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+/* Bloc de code (```… en Markdown → <pre><code>), pour les pages éditoriales comme
+   pour les tutos cloud-native : boîte qui défile en largeur (le code long ne pousse
+   jamais la page). Le fond/padding du <code> inline est neutralisé dans un <pre>. */
+pre { margin:.6rem 0; overflow-x:auto; background:var(--code); border:1px solid var(--border);
+      border-radius:8px; padding:.75rem .9rem; font-size:.85em; line-height:1.5;
+      font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+pre code { background:none; padding:0; border-radius:0; font-size:1em; }
+/* Coloration légère des blocs de code : seules les lignes de commentaire (# ou --,
+   cf. gpf.markdown._highlight_code) passent en vert, lisible en clair comme en sombre. */
+pre .tok-comment { color:var(--code-comment); }
+/* Bouton « Copier » posé par JS (_CODE_COPY_JS) en haut à droite d'un bloc de code :
+   icône « deux carrés » (convention presse-papiers), qui passe en ✓ vert un court
+   instant après copie. .code-wrap (position:relative) le tient hors du <pre> qui défile.
+   L'icône est un MASQUE SVG teinté par currentColor → suit le thème clair/sombre. */
+.code-wrap { position:relative; }
+.code-copy { position:absolute; top:.4rem; right:.4rem; cursor:pointer;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:1.7rem; height:1.7rem; padding:0; line-height:0;
+  color:var(--muted); background:var(--card);
+  border:1px solid var(--border); border-radius:6px;
+  opacity:.6; transition:opacity .15s, color .15s, border-color .15s; }
+.code-copy::before { content:""; width:.95rem; height:.95rem; background-color:currentColor;
+  -webkit-mask:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>') center/contain no-repeat;
+          mask:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>') center/contain no-repeat; }
+.code-wrap:hover .code-copy { opacity:1; }
+.code-copy:hover { color:var(--accent); border-color:var(--accent); }
+.code-copy:focus-visible { opacity:1; outline:2px solid var(--accent); outline-offset:2px; }
+/* Confirmation : coche verte un court instant (classe .copied posée par le JS). */
+.code-copy.copied { opacity:1; color:var(--code-comment); border-color:var(--code-comment); }
+.code-copy.copied::before {
+  -webkit-mask-image:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>');
+          mask-image:url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'); }
 
 nav.crumbs { font-size:.9rem; color:var(--muted); margin-bottom:1.2rem;
              word-break:break-word; }
@@ -204,6 +244,97 @@ table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-t
    réutilise table.listing. La colonne « Formats disponibles » résume ce qu'on
    trouvera en dessous ; texte discret pour ne pas concurrencer le nom (lien). */
 .listing td.formats { color:var(--muted); }
+
+/* --------------------------------------------------------------------------- */
+/* Accès cloud-native : badge de carte (⚡) + encart « accès direct » repliable  */
+/* en tête de fiche. Fond bleuté (--panel-*), distinct du flux normal. cf.        */
+/* render.cloud_block et gpf.cloud.                                              */
+/* --------------------------------------------------------------------------- */
+/* Badge de carte : signale un produit interrogeable à distance, sous le titre. */
+a.card .cloud-badge { align-self:flex-start; display:inline-flex; align-items:center;
+  gap:.3rem; margin:.5rem 0 0; font-size:.7rem; font-weight:600; letter-spacing:.02em;
+  color:var(--accent); background:var(--panel-bg); border:1px solid var(--panel-border);
+  border-radius:999px; padding:.12rem .55rem; }
+
+/* Encart : <details> replié par défaut, liseré accent à gauche (comme le bandeau
+   « produit arrêté », mais en bleu accent). */
+details.cloud-dt { border:1px solid var(--panel-border); border-left:3px solid var(--accent);
+  border-radius:10px; background:var(--panel-bg); margin:1.4rem 0; }
+details.cloud-dt > summary { list-style:none; cursor:pointer; display:flex;
+  align-items:center; gap:.5rem; flex-wrap:wrap; padding:.7rem .9rem; }
+details.cloud-dt > summary::-webkit-details-marker { display:none; }
+details.cloud-dt > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:2px; border-radius:8px; }
+.cloud-bolt { font-size:1.05rem; }
+.cloud-sum { flex:1; min-width:12rem; font-size:.93rem; }
+.cloud-tag { font-size:.68rem; font-weight:600; letter-spacing:.03em;
+  text-transform:uppercase; color:var(--accent); background:var(--card);
+  border:1px solid var(--panel-border); border-radius:999px; padding:.1rem .5rem;
+  white-space:nowrap; }
+/* Repère d'ouverture : le marqueur natif du <details> est retiré (list-style:none),
+   on le remplace par un « Afficher ▾ / Masquer ▴ » explicite (couleur accent) — sinon
+   le résumé passe pour une bannière figée et l'utilisateur ne devine pas qu'il déplie. */
+.cloud-disclose { font-size:.8rem; font-weight:600; color:var(--accent); white-space:nowrap; }
+details.cloud-dt:not([open]) > summary .cloud-disclose::after { content:"Afficher ▾"; }
+details.cloud-dt[open] > summary .cloud-disclose::after { content:"Masquer ▴"; }
+details.cloud-dt > summary:hover .cloud-disclose { text-decoration:underline; }
+.cloud-body { padding:0 1.05rem 1rem; }
+.cloud-meta { font-size:.82rem; color:var(--muted); margin:.1rem 0 .3rem; }
+.cloud-how { font-size:.85rem; color:var(--muted); margin:.5rem 0 .2rem; }
+details.cloud-couches { margin-top:.7rem; }
+details.cloud-couches > summary { cursor:pointer; font-size:.85rem; font-weight:600;
+  color:var(--accent); }
+details.cloud-couches > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:2px; border-radius:4px; }
+/* Tutos en ONGLETS, 100% CSS (radios cachés + sélecteur ~ sur :checked), placés
+   AU-DESSUS de la liste des couches. Un onglet = une section « ## » du Markdown
+   tutos/<produit>.md (cf. gpf.markdown.split_sections) ; règles génériques jusqu'à 4
+   onglets. Sans JS : si le CSS ou le JS venait à manquer, chaque panneau reste
+   atteignable (le premier est affiché par défaut, les radios sont navigables). */
+details.cloud-tuto { margin-top:.7rem; }
+details.cloud-tuto > summary { cursor:pointer; font-size:.85rem; font-weight:600;
+  color:var(--accent); }
+details.cloud-tuto > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:2px; border-radius:4px; }
+.cloud-tuto-intro { font-size:.85rem; color:var(--muted); margin:.5rem 0 .1rem; }
+.cloud-tabs { margin-top:.6rem; }
+/* Radio caché mais focusable (pas display:none) : le label sert de bouton d'onglet. */
+.cloud-tab-radio { position:absolute; opacity:0; pointer-events:none; }
+.cloud-tab-label { display:inline-block; cursor:pointer; font-size:.85rem; font-weight:500;
+  color:var(--muted); padding:.35rem .7rem; border-bottom:2px solid transparent; }
+.cloud-tab-label:hover { color:var(--fg); }
+.cloud-tab-radio:checked + .cloud-tab-label { color:var(--accent);
+  border-bottom-color:var(--accent); font-weight:600; }
+.cloud-tab-radio:focus-visible + .cloud-tab-label { outline:2px solid var(--accent);
+  outline-offset:2px; border-radius:4px; }
+.cloud-tab-panels { border-top:1px solid var(--panel-border); padding-top:.3rem; }
+.cloud-tab-panel { display:none; font-size:.9rem; }
+.cloud-tab-panel p { margin:.3rem 0; color:var(--muted); }
+/* Onglet i coché → panneau i visible (position à position). */
+.cloud-tab-radio:nth-of-type(1):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(1),
+.cloud-tab-radio:nth-of-type(2):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(2),
+.cloud-tab-radio:nth-of-type(3):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(3),
+.cloud-tab-radio:nth-of-type(4):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(4) {
+  display:block; }
+/* Bouton « Copier » : PAS un lien — ces fichiers pèsent souvent plusieurs Gio, on
+   copie leur URL pour les interroger à distance, on ne les clique pas (un clic
+   déclencherait un téléchargement intégral). */
+.cloud-copy { cursor:pointer; font:inherit; font-size:.8rem; font-weight:600;
+  color:var(--accent); background:transparent; border:1px solid var(--panel-border);
+  border-radius:6px; padding:.15rem .5rem; white-space:nowrap; }
+.cloud-copy:hover { border-color:var(--accent); }
+.cloud-copy:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.cloud-none { color:var(--muted); }
+/* Colonnes de format (2e, 3e…) : compactes, calées à droite (comme .num). */
+table.cloud-layers th:not(:first-child),
+table.cloud-layers td:not(:first-child) { text-align:right; white-space:nowrap; width:1%; }
+/* Mode « cartes » (≤768px) : la table est délinéarisée (bloc média en fin de CSS) et
+   les cellules de format passeraient inline, collées (« Copier FlatGeoBuf : … »). On
+   les remet en bloc, une par ligne sous le nom de couche, alignées à gauche et espacées. */
+@media (max-width:768px) {
+  table.cloud-layers td[data-label] { display:block; width:auto; text-align:left;
+    margin:.35rem 0 0; }
+}
 
 footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
          font-size:.85rem; color:var(--muted);
@@ -345,6 +476,35 @@ _THEME_TOGGLE = (
     "next=cur==='dark'?'light':'dark';"
     "r.dataset.theme=next;try{localStorage.setItem('theme',next);}catch(e){}});})();</script>")
 
+# Bouton « Copier » ajouté en haut à droite de chaque bloc de code au chargement.
+# Amélioration progressive : sans JS, le code reste sélectionnable, simplement sans
+# bouton. Le <pre> est enveloppé d'un .code-wrap positionné (le bouton reste fixé au
+# coin même quand le code défile) ; le bouton copie le texte brut du <code> (les spans
+# de coloration sont ignorés par textContent). Repli execCommand si clipboard absent.
+_CODE_COPY_JS = (
+    "<script>(function(){"
+    "function copy(txt,btn){var done=function(){btn.classList.add('copied');"
+    "setTimeout(function(){btn.classList.remove('copied');},1200);};"
+    "if(navigator.clipboard&&navigator.clipboard.writeText){"
+    "navigator.clipboard.writeText(txt).then(done,function(){});}"
+    "else{var t=document.createElement('textarea');t.value=txt;"
+    "t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);"
+    "t.focus();t.select();try{document.execCommand('copy');done();}catch(e){}"
+    "document.body.removeChild(t);}}"
+    "function enhance(){document.querySelectorAll('pre>code').forEach(function(code){"
+    "var pre=code.parentNode;"
+    "if(pre.parentNode&&pre.parentNode.classList.contains('code-wrap'))return;"
+    "var wrap=document.createElement('div');wrap.className='code-wrap';"
+    "pre.parentNode.insertBefore(wrap,pre);wrap.appendChild(pre);"
+    "var btn=document.createElement('button');btn.type='button';"
+    "btn.className='code-copy';btn.title='Copier';"
+    "btn.setAttribute('aria-label','Copier le code');"
+    "btn.addEventListener('click',function(){copy(code.textContent,btn);});"
+    "wrap.appendChild(btn);});}"
+    "if(document.readyState!=='loading')enhance();"
+    "else document.addEventListener('DOMContentLoaded',enhance);"
+    "})();</script>")
+
 _PAGE = Template("""<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -361,6 +521,7 @@ $crumbs<main>
 $body
 </main>
 $footer
+$code_copy
 </body>
 </html>
 """)
@@ -501,7 +662,8 @@ def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
     page = _PAGE.substitute(title=esc(title), css_href=css_href,
                             favicon_href=favicon_href, body=body,
                             crumbs=crumbs, footer=footer,
-                            theme_init=_THEME_INIT, theme_toggle=_THEME_TOGGLE)
+                            theme_init=_THEME_INIT, theme_toggle=_THEME_TOGGLE,
+                            code_copy=_CODE_COPY_JS)
     with open(os.path.join(fs_dir, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
 
@@ -636,6 +798,125 @@ def product_header(product) -> str:
     return "".join(out)
 
 
+# Copie presse-papiers des boutons « Copier » de l'encart cloud-native, par
+# délégation d'événement (un seul écouteur pour tous les boutons). Inline, sans
+# dépendance ; posé avec l'encart, donc seulement sur les fiches concernées.
+_CLOUD_COPY_JS = (
+    "<script>document.addEventListener('click',function(e){"
+    "var b=e.target.closest('.cloud-copy');if(!b)return;e.preventDefault();"
+    "var u=b.getAttribute('data-url'),done=function(){"
+    "var o=b.textContent;b.textContent='Copié';"
+    "setTimeout(function(){b.textContent=o;},1200);};"
+    "if(navigator.clipboard&&navigator.clipboard.writeText){"
+    "navigator.clipboard.writeText(u).then(done,function(){});}"
+    "else{var t=document.createElement('textarea');t.value=u;"
+    "t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);"
+    "t.focus();t.select();try{document.execCommand('copy');done();}catch(x){}"
+    "document.body.removeChild(t);}});</script>")
+
+
+def _cloud_tabs(intro: str, tabs: list[tuple[str, str]] | None) -> str:
+    """Onglets de tutos, 100% CSS : radios cachés (le 1er coché) + labels servant de
+    boutons, puis un panneau par onglet (affiché via le sélecteur CSS sur :checked).
+    `tabs` : [(libellé, HTML du panneau)] (cf. gpf.markdown.split_sections) ; `intro` :
+    HTML d'intro optionnel au-dessus. Renvoie « » s'il n'y a aucun onglet. Le libellé est
+    échappé ; les corps sont déjà du HTML sûr (issus de to_html)."""
+    if not tabs:
+        return ""
+    controls, panels = [], []
+    for i, (label, body) in enumerate(tabs):
+        checked = " checked" if i == 0 else ""
+        controls.append(
+            f'<input type="radio" name="cloud-tuto" id="cloud-tab-{i}"'
+            f' class="cloud-tab-radio"{checked}>'
+            f'<label for="cloud-tab-{i}" class="cloud-tab-label">{esc(label)}</label>')
+        panels.append(f'<div class="cloud-tab-panel">{body}</div>')
+    intro_html = f'<div class="cloud-tuto-intro">{intro}</div>' if intro else ""
+    tabs_html = ('<div class="cloud-tabs">' + "".join(controls)
+                 + '<div class="cloud-tab-panels">' + "".join(panels) + "</div></div>")
+    # Repliable (replié par défaut), au même niveau que « Couches disponibles ». Les
+    # onglets CSS restent internes à .cloud-tabs : le <details> ne perturbe pas leurs
+    # sélecteurs (~ / :checked entre frères de .cloud-tabs).
+    return ('<details class="cloud-tuto"><summary>Comment interroger ces couches&nbsp;?'
+            '</summary><div class="cloud-tuto-body">' + intro_html + tabs_html
+            + "</div></details>")
+
+
+def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
+                tuto_tabs: list[tuple[str, str]] | None = None) -> str:
+    """Encart « accès direct pour l'analyse » d'une fiche produit : replié par défaut
+    (<details>), inséré en HAUT de fiche (au-dessus de l'arbre de téléchargement, qui
+    reste inchangé). Annonce les formats cloud-native (GeoParquet, FlatGeoBuf), montre
+    les tutos en onglets, puis déplie la liste des couches avec, par format, un bouton
+    copiant l'URL du fichier (jamais un lien : ces fichiers pèsent souvent plusieurs Gio
+    et se copient pour être interrogés à distance, pas cliqués). `layers` : structure de
+    cloud.fetch_product_layers. `help_url` : lien optionnel vers des tutoriels externes.
+    `tuto_intro`/`tuto_tabs` : tutos (tutos/<produit>.md découpé par
+    gpf.markdown.split_sections), rendus en ONGLETS CSS au-dessus des couches ; omis si
+    `tuto_tabs` est vide. Renvoie « » si `layers` est vide (rien à montrer)."""
+    if not layers or not layers.get("formats") or not layers.get("couches"):
+        return ""
+    fmt_labels = [f["label"] for f in layers["formats"]]
+
+    # Ligne méta : formats · emprise (si uniforme) · un fichier par couche · édition.
+    meta = [", ".join(esc(l) for l in fmt_labels)]
+    if layers.get("zone_label"):
+        meta.append(esc(layers["zone_label"]))
+    meta.append("un fichier par couche")
+    if layers.get("edition"):
+        meta.append("dernière édition " + esc(layers["edition"]))
+
+    # Tableau couches × formats. Chaque cellule de format : bouton « Copier » (data-url)
+    # ou « — » si la couche n'existe pas dans ce format. data-label = format : sert de
+    # libellé de colonne en mode « cartes » (mobile), où l'en-tête est masqué.
+    head = "<th>Couche</th>" + "".join(f"<th>{esc(l)}</th>" for l in fmt_labels)
+    trs = []
+    for c in layers["couches"]:
+        cells = [f'<td>{esc(c["name"])}</td>']
+        for l in fmt_labels:
+            url = c["urls"].get(l)
+            if url:
+                cells.append(
+                    f'<td data-label="{esc(l)}"><button type="button"'
+                    f' class="cloud-copy" data-url="{esc(url)}"'
+                    f' title="Copier l\'URL {esc(l)}">Copier</button></td>')
+            else:
+                cells.append(f'<td class="cloud-none" data-label="{esc(l)}">—</td>')
+        trs.append(f"<tr>{''.join(cells)}</tr>")
+    table = ('<div class="scroll"><table class="listing cloud-layers">'
+             f'<thead><tr>{head}</tr></thead><tbody>{"".join(trs)}</tbody></table></div>')
+
+    # « Comment s'en servir » : phrase courte (braces littérales → PAS d'f-string) +
+    # lien optionnel vers les tutoriels (le « super tuto » vit hors de la fiche).
+    how = ('<p class="cloud-how">Interrogez la donnée à distance avec DuckDB, GDAL '
+           "ou Pyarrow : seuls les objets que vous filtrez (par emprise ou par attribut) "
+           "sont rapatriés, jamais le fichier entier. "
+           "Données disponibles uniquement sur le <a href=\"https://cartes.gouv.fr/aide/fr/partenaires/ign/generalites-ign/actualites/2026-06-flatgeobuf-geoparquet/\" target=\"_blank\" rel=\"noopener\">service de téléchargement partiel</a>.")
+    if help_url:
+        how += (f' <a href="{esc(help_url)}" target="_blank" rel="noopener">'
+                "exemples et tutoriels</a>.")
+    how += "</p>"
+
+    n = len(layers["couches"])
+    tuto = _cloud_tabs(tuto_intro, tuto_tabs)
+    return (
+        '<details class="cloud-dt">'
+        '<summary><span class="cloud-bolt" aria-hidden="true">⚡</span>'
+        '<span class="cloud-sum"><strong>Accès direct pour l\'analyse</strong> : '
+        "interroger la donnée à distance, sans tout télécharger</span>"
+        '<span class="cloud-tag">Cloud-native</span>'
+        '<span class="cloud-disclose" aria-hidden="true"></span></summary>'
+        '<div class="cloud-body">'
+        f'<p class="cloud-meta">{" · ".join(meta)}</p>'
+        f"{how}"
+        f"{tuto}"
+        f'<details class="cloud-couches"><summary>Couches disponibles ({n})</summary>'
+        f"{table}</details>"
+        "</div>"
+        f"{_CLOUD_COPY_JS}"
+        "</details>")
+
+
 def _producer_badge(producers: list[dict] | None) -> str:
     """Badge producteur(s) d'une carte : pour chaque producteur, son logo (<img>)
     s'il en a un, sinon son nom en texte. Plusieurs producteurs (coédition) sont
@@ -669,12 +950,19 @@ def _card_grid(cards: list[dict]) -> str:
                 + f'<strong>{esc(c["title"])}</strong>'
                 + _producer_badge(c.get("producers"))
                 + "</span>")
+        # Badge « Cloud-native » : produit interrogeable à distance (cf. cloud_block).
+        # Nomme la CAPACITÉ, pas un format (GeoParquet/FlatGeoBuf), pour ne pas en
+        # privilégier un. Posé sous l'en-tête, avant le résumé. `title` = infobulle
+        # native au survol (courte explication, sans JS).
+        cloud = ('<span class="cloud-badge" title="Interrogeable à distance '
+                 '(GeoParquet, FlatGeoBuf), sans tout télécharger">⚡ Cloud-native</span>'
+                 if c.get("cloud_native") else "")
         summary = (f'<span class="summary">{esc(c["summary"])}</span>'
                    if c["summary"] else "")
         update = (f'<span class="update">Mise à jour&nbsp;: {esc(c["update"])}</span>'
                   if c.get("update") else "")
         items.append(f'<li{li_cls}><a class="{a_cls}" href="{esc(c["href"])}">'
-                     + flag + head + summary + update + "</a></li>")
+                     + flag + head + cloud + summary + update + "</a></li>")
     return f'<ul class="grid">{"".join(items)}</ul>'
 
 
