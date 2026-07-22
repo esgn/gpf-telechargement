@@ -64,7 +64,11 @@ def _backoff(attempt: int) -> float:
 
 class Client:
     """Client limité à `rps` requêtes/seconde, avec backoff exponentiel sur
-    429/5xx/timeout. 404 → None (ressource disparue, pas une erreur fatale).
+    429/5xx/404/timeout (`max_retries` essais, ~3 min de backoff cumulé). Un 404 est
+    RÉESSAYÉ : le catalogue de l'API est « eventually consistent » — une ressource
+    listée par son parent peut renvoyer 404 le temps d'une publication en cours, puis
+    réapparaître (cf. OCSGE, listing 445/448). Il ne renvoie None qu'une fois les essais
+    épuisés (inaccessible), et c'est l'appelant qui décide alors de la fatalité.
     `page_size` est plafonné à 50 par l'API.
 
     Sur 429, l'API renvoie un header Retry-After (durée de blocage décroissant TANT
@@ -73,7 +77,7 @@ class Client:
     trafic des autres empêcherait le compteur de redescendre (429 en boucle)."""
 
     def __init__(self, rps: float = 10, timeout: int = 30,
-                 max_retries: int = 5, page_size: int = 50, workers: int = 8):
+                 max_retries: int = 8, page_size: int = 50, workers: int = 8):
         # L'API plafonne à 10 req/s ; on borne dans (0, 10] pour éviter à la fois
         # une division par zéro et un throttle négatif (qui martèlerait l'API).
         rps = min(10.0, rps) if rps and rps > 0 else 10.0
@@ -84,7 +88,7 @@ class Client:
         self.workers = max(1, workers)   # requêtes en vol simultanées (throttle global inchangé)
         self.requests = 0
         self.rate_limits = 0          # nombre de 429 rencontrés
-        self.rate_limit_wait = 0.0    # temps mural (s) passé bloqué par les murs 429
+        self.rate_limit_wait = 0.0    # durée réelle (s) passée bloquée par les murs 429
         self.retries = 0              # nombre de backoffs sur échec transitoire (5xx/timeout/réseau)
         self.retry_wait = 0.0         # temps (s) passé en backoff local, CUMULÉ sur les workers
         self._last = 0.0
@@ -98,7 +102,7 @@ class Client:
 
         `rate_limit_wait` n'accumule que le PROLONGEMENT effectif du mur au-delà de
         ce qui était déjà planifié : deux 429 quasi simultanés dont les murs se
-        recouvrent ne comptent qu'une fois — c'est bien le temps mural d'attente,
+        recouvrent ne comptent qu'une fois — c'est bien la durée réelle d'attente,
         pas la somme (trompeuse) vue par chaque worker bloqué en parallèle."""
         with self._throttle_lock:
             now = time.monotonic()
@@ -111,8 +115,8 @@ class Client:
     def _backoff_sleep(self, attempt: int) -> None:
         """Backoff LOCAL sur échec transitoire (5xx / timeout / réseau), instrumenté.
         À la différence du mur 429, ces attentes sont indépendantes par worker (pas de
-        verrou global) : `retry_wait` est donc un CUMUL sur les workers, pas un temps
-        mural — à lire comme un ordre de grandeur de l'ampleur des échecs transitoires,
+        verrou global) : `retry_wait` est donc un CUMUL sur les workers, pas une durée
+        réelle — à lire comme un ordre de grandeur de l'ampleur des échecs transitoires,
         pas comme du temps de build perdu tel quel."""
         delay = _backoff(attempt)
         with self._throttle_lock:
@@ -159,8 +163,6 @@ class Client:
                         data = gzip.decompress(data)
                     return data
             except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    return None
                 if e.code == 429:
                     # Rate-limit : mur GLOBAL. On suit Retry-After si l'API le donne,
                     # sinon backoff jitteré. Tous les workers attendront ce mur.
@@ -172,8 +174,13 @@ class Client:
                     ra = _parse_retry_after(e.headers)
                     self._pause_all(ra if ra is not None else _backoff(attempt))
                     continue
-                if 500 <= e.code < 600:
-                    # Panne serveur ponctuelle : backoff LOCAL, pas de mur global.
+                if e.code == 404 or 500 <= e.code < 600:
+                    # 5xx : panne serveur ponctuelle. 404 : le catalogue de l'API est
+                    # « eventually consistent » — une ressource listée par son parent peut
+                    # renvoyer 404 le temps d'une publication en cours puis réapparaître.
+                    # On réessaie donc le 404 (backoff LOCAL, pas de mur global) au lieu de
+                    # le tenir d'emblée pour une absence définitive ; s'il persiste au-delà
+                    # des essais, None remonte à l'appelant (qui décide de la fatalité).
                     last_cause = f"HTTP {e.code} {e.reason}"
                     self._backoff_sleep(attempt)
                     continue

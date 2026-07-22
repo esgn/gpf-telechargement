@@ -101,10 +101,14 @@ jobs:
         run: python build.py --check || true
 
       - name: Générer le site (rebuild complet)
+        # --fail-fast : un feed en erreur fatale ne publiera rien (deploy conditionné à
+        # la réussite du build), on coupe donc sans dérouler le reste du crawl pour ne
+        # pas gaspiller de temps d'exécution. Le dernier site sain reste en ligne.
         run: >
           python build.py --out site
           --workers ${{ inputs.workers || '8' }}
           --requests-per-second ${{ inputs.requests_per_second || '8' }}
+          --fail-fast
 
       - uses: actions/upload-pages-artifact@v5
         with:

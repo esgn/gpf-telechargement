@@ -206,13 +206,18 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
 
 
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
-              only_theme: str | None, rps: float, workers: int = 8) -> int:
+              only_theme: str | None, rps: float, workers: int = 8,
+              fail_fast: bool = False) -> int:
     """Reconstruit le site : chaque produit inclus est re-crawlé (pas de cache).
 
     `only` / `only_theme` restreignent le crawl à un produit / un thème (test) ;
     dans les deux cas les autres dossiers ne sont pas purgés. Les pages de thème
     et l'accueil sont toujours régénérées à partir du catalogue complet, de sorte
-    que la navigation reste cohérente même quand un seul produit/thème est crawlé."""
+    que la navigation reste cohérente même quand un seul produit/thème est crawlé.
+
+    `fail_fast` : interrompt le build au 1er feed tombé en erreur fatale, au lieu de
+    tout collecter (fail-at-last, défaut). Le rendu global (accueil, thèmes, assets)
+    est alors sauté : le build échoue et rien n'est publié de toute façon."""
     t0 = time.monotonic()
     site = _site(cat)
     service = _service(cat, "download")
@@ -235,6 +240,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     sections: dict[str, list[dict]] = {}   # theme_id → [{id, title, summary}, …]
     keep_themes: set[str] = set()
     built = 0
+    aborted = False                        # coupé par --fail-fast (rendu global sauté)
 
     for product in cat.included():
         # 1. Résoudre l'entrée API. Une « page éditoriale » (product.page) n'a pas de
@@ -282,19 +288,32 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
                            cat.theme_label(theme), cloud_html)
         built += 1
 
-    if not only and not only_theme:
-        prune_subdirs(out_dir, keep_themes)
-    _copy_assets(out_dir)
-    render.write_stylesheet(out_dir)          # feuille de style partagée (une fois)
-    render.write_robots(out_dir)              # robots.txt : blocage des crawlers IA
-    render.write_favicon(out_dir)             # favicon SVG partagée (une fois)
-    _write_theme_pages(ctx, cat, sections)
-    _write_home(ctx, cat, sections, site)
+        # Fail-fast : dès qu'un feed est tombé en erreur fatale, inutile de dérouler
+        # le reste du crawl — un build en échec ne publie rien (deploy conditionné à la
+        # réussite du build), on coupe donc pour ne pas brûler le temps restant. Sans
+        # l'option, on poursuit (fail-at-last) afin de lister TOUS les feeds cassés.
+        if fail_fast and ctx.errors:
+            log(f"\n--fail-fast : arrêt après {built} produit(s) "
+                f"(1re erreur fatale rencontrée).")
+            aborted = True
+            break
+
+    # Rendu global (purge, assets, feuille de style, thèmes, accueil) — sauté si on a
+    # coupé en fail-fast : la grille de cartes est partielle et rien ne sera publié.
+    if not aborted:
+        if not only and not only_theme:
+            prune_subdirs(out_dir, keep_themes)
+        _copy_assets(out_dir)
+        render.write_stylesheet(out_dir)      # feuille de style partagée (une fois)
+        render.write_robots(out_dir)          # robots.txt : blocage des crawlers IA
+        render.write_favicon(out_dir)         # favicon SVG partagée (une fois)
+        _write_theme_pages(ctx, cat, sections)
+        _write_home(ctx, cat, sections, site)
 
     elapsed = time.monotonic() - t0
     eff_rps = client.requests / elapsed if elapsed else 0.0
-    log(f"\nTerminé : {built} produit(s) construit(s), {ctx.pages} page(s), "
-        f"{client.requests} requête(s) en {elapsed/60:.1f} min "
+    log(f"\n{'Interrompu' if aborted else 'Terminé'} : {built} produit(s) construit(s), "
+        f"{ctx.pages} page(s), {client.requests} requête(s) en {elapsed/60:.1f} min "
         f"({eff_rps:.1f} req/s effectif).")
     if client.rate_limits:
         log(f"  Rate-limit : {client.rate_limits} réponse(s) 429, "
@@ -530,6 +549,10 @@ def main(argv=None) -> int:
     p.add_argument("--requests-per-second", type=float, default=10, dest="rps", help="débit visé (défaut : 10)")
     p.add_argument("--workers", type=int, default=8, dest="workers",
                    help="nombre de requêtes de crawl en parallèle (défaut : 8)")
+    p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
+                   help="s'arrêter au 1er feed en erreur fatale sans dérouler le reste du "
+                        "crawl (un build en échec ne publie rien de toute façon) ; défaut : "
+                        "collecter toutes les erreurs avant d'échouer")
     args = p.parse_args(argv)
 
     if args.only and args.only_theme:
@@ -561,7 +584,8 @@ def main(argv=None) -> int:
     if args.cloud_only is not None:
         return run_cloud_only(cat, args.out, args.cloud_only or None, args.rps, args.workers)
 
-    return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers)
+    return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers,
+                     args.fail_fast)
 
 
 if __name__ == "__main__":
