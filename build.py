@@ -259,16 +259,17 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
         theme_dir = slug(theme)
         title = product.title or (entry and entry["title"]) or product.id
         keep_themes.add(theme_dir)
-        # Accès direct disponible ? Ressource chunk résolue ET déclarant un format
-        # surfacé (GeoParquet/FlatGeoBuf), d'après le capabilities : aucune requête de
-        # plus, et MÊME règle que l'encart (badge et encart ne divergent pas). Exclut les
-        # pages éditoriales (product.page : ni arbre ni encart). Calculable pour TOUTES
-        # les cartes (badge), même celles que --only ne construit pas.
+        # Accès direct POSSIBLE d'après le capabilities (ressource chunk résolue ET format
+        # surfacé GeoParquet/FlatGeoBuf), sans requête de plus. C'est la condition pour
+        # SONDER le service ; le badge n'est CONFIRMÉ qu'après la sonde live (étape 3) : si
+        # l'encart s'avère vide, on retire le badge (plus bas) pour ne pas promettre un
+        # accès direct absent. Exclut les pages éditoriales (ni arbre ni encart). Pour un
+        # produit que --only ne reconstruit pas, le badge reste celui du capabilities.
         cloud_entry = (chunk_live.get(product.cloud_native)
                        if product.cloud_native and not product.page else None)
         has_cloud = bool(cloud_entry and cloud.has_surfaced_format(cloud_entry))
-        sections.setdefault(theme, []).append(
-            _section_card(product, title, cat, has_cloud))
+        card = _section_card(product, title, cat, has_cloud)
+        sections.setdefault(theme, []).append(card)
 
         # 3. Construire — sauf si un filtre --only/--only-theme exclut ce produit.
         if _filtered_out(only, only_theme, product.id, theme):
@@ -284,6 +285,12 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
             # de l'arbre). Vide sinon.
             cloud_html = (_cloud_block(ctx, cloud_entry, product, site)
                           if has_cloud else "")
+            # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
+            # build) alors que le capabilities annonçait un format : encart vide → on
+            # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
+            # fiche dépourvue d'accès direct.
+            if has_cloud and not cloud_html:
+                card["cloud_native"] = False
             _build_product(ctx, product, entry, prod_dir, title,
                            cat.theme_label(theme), cloud_html)
         built += 1
