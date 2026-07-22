@@ -313,7 +313,9 @@ details.cloud-tuto > summary:focus-visible { outline:2px solid var(--accent);
 .cloud-tab-panels { border-top:1px solid var(--panel-border); padding-top:.3rem; }
 .cloud-tab-panel { display:none; font-size:.9rem; }
 .cloud-tab-panel p { margin:.3rem 0; color:var(--muted); }
-/* Onglet i coché → panneau i visible (position à position). */
+/* Onglet i coché → panneau i visible (position à position). Énumération FIGÉE jusqu'à
+   MAX_CLOUD_TABS onglets ; _cloud_tabs tronque au-delà (un 5e onglet coché décocherait le
+   1er sans qu'aucune règle n'affiche son panneau → corps de tuto vide). */
 .cloud-tab-radio:nth-of-type(1):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(1),
 .cloud-tab-radio:nth-of-type(2):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(2),
 .cloud-tab-radio:nth-of-type(3):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(3),
@@ -336,8 +338,10 @@ details.cloud-tuto > summary:focus-visible { outline:2px solid var(--accent);
 .cloud-copy:hover { border-color:var(--accent); }
 .cloud-copy:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* Confirmation après clic (classe posée ~1,2 s par le JS) : le contrôle passe au vert.
-   Sélecteur composé .cloud-copy.cloud-copied (0,2,0) pour l'emporter sur .cloud-copy:hover
-   (0,1,1) : le curseur est encore sur le bouton juste après le clic. */
+   Juste après le clic le curseur est encore dessus, donc .cloud-copy:hover s'applique
+   aussi. Les deux sélecteurs ont la MÊME spécificité (0,2,0) — :hover est une pseudo-
+   classe, elle compte comme une classe : (une classe + :hover) = (deux classes). C'est
+   donc l'ORDRE SOURCE qui tranche : .cloud-copied est déclarée après :hover → l'emporte. */
 .cloud-copy.cloud-copied { color:var(--ok); border-color:var(--ok); }
 .cloud-none { color:var(--muted); }
 /* Colonnes de format (2e, 3e…) : compactes, calées à droite (comme .num). */
@@ -496,16 +500,19 @@ _THEME_TOGGLE = (
 # bouton. Le <pre> est enveloppé d'un .code-wrap positionné (le bouton reste fixé au
 # coin même quand le code défile) ; le bouton copie le texte brut du <code> (les spans
 # de coloration sont ignorés par textContent). Repli execCommand si clipboard absent.
+# Expose aussi window.__gpfCopy(txt, onDone) : le helper de copie PARTAGÉ, réutilisé par
+# les boutons « Copier » de l'encart cloud-native (cf. _CLOUD_COPY_JS). Injecté sur CHAQUE
+# page via _PAGE, il est donc toujours défini au moment d'un clic (les listeners ne
+# l'appellent qu'au clic, bien après le parse de tous les scripts).
 _CODE_COPY_JS = (
     "<script>(function(){"
-    "function copy(txt,btn){var done=function(){btn.classList.add('copied');"
-    "setTimeout(function(){btn.classList.remove('copied');},1200);};"
+    "window.__gpfCopy=function(txt,onDone){"
     "if(navigator.clipboard&&navigator.clipboard.writeText){"
-    "navigator.clipboard.writeText(txt).then(done,function(){});}"
+    "navigator.clipboard.writeText(txt).then(onDone,function(){});}"
     "else{var t=document.createElement('textarea');t.value=txt;"
     "t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);"
-    "t.focus();t.select();try{document.execCommand('copy');done();}catch(e){}"
-    "document.body.removeChild(t);}}"
+    "t.focus();t.select();try{document.execCommand('copy');onDone();}catch(e){}"
+    "document.body.removeChild(t);}};"
     "function enhance(){document.querySelectorAll('pre>code').forEach(function(code){"
     "var pre=code.parentNode;"
     "if(pre.parentNode&&pre.parentNode.classList.contains('code-wrap'))return;"
@@ -514,7 +521,9 @@ _CODE_COPY_JS = (
     "var btn=document.createElement('button');btn.type='button';"
     "btn.className='code-copy';btn.title='Copier';"
     "btn.setAttribute('aria-label','Copier le code');"
-    "btn.addEventListener('click',function(){copy(code.textContent,btn);});"
+    "btn.addEventListener('click',function(){window.__gpfCopy(code.textContent,"
+    "function(){btn.classList.add('copied');"
+    "setTimeout(function(){btn.classList.remove('copied');},1200);});});"
     "wrap.appendChild(btn);});}"
     "if(document.readyState!=='loading')enhance();"
     "else document.addEventListener('DOMContentLoaded',enhance);"
@@ -816,18 +825,23 @@ def product_header(product) -> str:
 # Copie presse-papiers des boutons « Copier » de l'encart cloud-native, par
 # délégation d'événement (un seul écouteur pour tous les boutons). Inline, sans
 # dépendance ; posé avec l'encart, donc seulement sur les fiches concernées.
+# Copie de l'URL d'un fichier via le helper PARTAGÉ window.__gpfCopy (défini par
+# _CODE_COPY_JS, présent sur chaque page) : on ne duplique plus la logique presse-papiers.
+# Délégation sur .cloud-copy ; preventDefault pour que le clic copie au lieu de suivre le
+# <a href> (qui, lui, sert l'aperçu de l'URL dans la barre d'état au survol).
 _CLOUD_COPY_JS = (
     "<script>document.addEventListener('click',function(e){"
     "var b=e.target.closest('.cloud-copy');if(!b)return;e.preventDefault();"
-    "var u=b.getAttribute('href'),done=function(){"
+    "window.__gpfCopy(b.getAttribute('href'),function(){"
     "var o=b.textContent;b.textContent='Copié';b.classList.add('cloud-copied');"
-    "setTimeout(function(){b.textContent=o;b.classList.remove('cloud-copied');},1200);};"
-    "if(navigator.clipboard&&navigator.clipboard.writeText){"
-    "navigator.clipboard.writeText(u).then(done,function(){});}"
-    "else{var t=document.createElement('textarea');t.value=u;"
-    "t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);"
-    "t.focus();t.select();try{document.execCommand('copy');done();}catch(x){}"
-    "document.body.removeChild(t);}});</script>")
+    "setTimeout(function(){b.textContent=o;b.classList.remove('cloud-copied');},1200);});"
+    "});</script>")
+
+
+# Nombre maximal d'onglets de tuto affichables : l'énumération CSS nth-of-type est figée
+# à ce nombre (cf. bloc « .cloud-tab-radio:nth-of-type(…) »). Au-delà, _cloud_tabs tronque
+# (build._cloud_block avertit) plutôt que de rendre un onglet au panneau invisible.
+MAX_CLOUD_TABS = 4
 
 
 def _cloud_tabs(intro: str, tabs: list[tuple[str, str]] | None) -> str:
@@ -835,9 +849,11 @@ def _cloud_tabs(intro: str, tabs: list[tuple[str, str]] | None) -> str:
     boutons, puis un panneau par onglet (affiché via le sélecteur CSS sur :checked).
     `tabs` : [(libellé, HTML du panneau)] (cf. gpf.markdown.split_sections) ; `intro` :
     HTML d'intro optionnel au-dessus. Renvoie « » s'il n'y a aucun onglet. Le libellé est
-    échappé ; les corps sont déjà du HTML sûr (issus de to_html)."""
+    échappé ; les corps sont déjà du HTML sûr (issus de to_html). Tronqué à MAX_CLOUD_TABS
+    onglets (garde-fou : le CSS ne sait afficher que les MAX_CLOUD_TABS premiers)."""
     if not tabs:
         return ""
+    tabs = tabs[:MAX_CLOUD_TABS]
     controls, panels = [], []
     for i, (label, body) in enumerate(tabs):
         checked = " checked" if i == 0 else ""

@@ -117,7 +117,13 @@ class Client:
         À la différence du mur 429, ces attentes sont indépendantes par worker (pas de
         verrou global) : `retry_wait` est donc un CUMUL sur les workers, pas une durée
         réelle — à lire comme un ordre de grandeur de l'ampleur des échecs transitoires,
-        pas comme du temps de build perdu tel quel."""
+        pas comme du temps de build perdu tel quel.
+
+        No-op sur la DERNIÈRE tentative (attempt == max_retries - 1) : aucun essai ne la
+        suit, dormir avant d'abandonner serait du temps mort pur. On n'incrémente donc
+        pas non plus les compteurs (seuls les backoffs qui précèdent un vrai réessai)."""
+        if attempt >= self.max_retries - 1:
+            return
         delay = _backoff(attempt)
         with self._throttle_lock:
             self.retries += 1

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from .api import Client, fetch_capabilities, log
 from .catalogue import Catalogue
+from .cloud import has_surfaced_format
 from .model import resource_id
 
 
@@ -53,24 +54,33 @@ def _check_cloud_drift(client: Client, catalogue: Catalogue,
     qui ne résolvent plus (à corriger) et (b) les ressources chunk non encore
     référencées (accès direct possible à câbler). Non bloquant : si le service chunk
     est inaccessible, on l'indique et on s'arrête là (le volet téléchargement, lui,
-    a déjà son verdict)."""
+    a déjà son verdict).
+
+    Critère ALIGNÉ sur le build (build._build_product) : un « cloud_native » n'est
+    « résolu » que si sa ressource existe au capabilities ET y déclare un format surfacé
+    (GeoParquet/FlatGeoBuf, via has_surfaced_format) — sinon le build ne pose ni badge ni
+    encart. On restreint aux produits INCLUS non éditoriaux, comme le volet téléchargement,
+    pour ne pas alerter sur des produits que le build ne construit jamais."""
     resources = fetch_capabilities(client, chunk_service,
                                    label="service cloud-native (chunk)")
     if resources is None:
         return
 
-    live = {resource_id(e): (e["title"] or resource_id(e)) for e in resources}
-    declared = {p.cloud_native: p.id for p in catalogue.products if p.cloud_native}
+    live = {resource_id(e): e for e in resources}   # entrée complète : besoin de fmt_all
+    declared = {p.cloud_native: p.id for p in catalogue.included()
+                if p.cloud_native and not p.page}
 
     log(f"\n--- Dérive cloud-native ↔ {chunk_service['base_url']} ---")
     log(f"  catalogue : {len(declared)} produit(s) à accès direct ; "
         f"service chunk : {len(live)} ressource(s).")
-    broken = sorted(cn for cn in declared if cn not in live)
-    unref = sorted(live.keys() - set(declared))
-    _section("« cloud_native » déclaré(s) mais absent(s) du service chunk",
+    broken = sorted(cn for cn in declared
+                    if cn not in live or not has_surfaced_format(live[cn]))
+    unref = sorted(rid for rid in live
+                   if rid not in declared and has_surfaced_format(live[rid]))
+    _section("« cloud_native » déclaré(s) mais non résolu(s) (absent ou sans format cloud-native)",
              [f"{cn}  (produit « {declared[cn]} »)" for cn in broken])
-    _section("ressource(s) chunk non référencée(s) (accès direct possible à câbler)",
-             [f"{i}  « {live[i]} »" for i in unref])
+    _section("ressource(s) chunk cloud-native non référencée(s) (accès direct possible à câbler)",
+             [f"{rid}  « {live[rid]['title'] or rid} »" for rid in unref])
     if not (broken or unref):
         log("  ✓ accès direct aligné avec le service chunk.")
 

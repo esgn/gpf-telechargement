@@ -104,6 +104,7 @@ def fetch_product_layers(client: Client, resource_entry: dict,
           "edition": "2026-06-15",          # édition la plus récente (ligne méta)
           "couches": [ {"name": "troncon_de_route",
                         "urls": {"GeoParquet": "https://…", "FlatGeoBuf": "https://…"}}, … ],
+          "degraded": ["FlatGeoBuf"],       # formats écartés (feuille injoignable) ; [] si nominal
         }
 
     Descente courte : 1 requête pour la ressource + 1 par format retenu. Un fichier
@@ -120,9 +121,11 @@ def fetch_product_layers(client: Client, resource_entry: dict,
     couches: dict[str, dict] = {}
     zones: set[str] = set()
     sozip: set[str] = set()            # formats dont les fichiers sont livrés en .zip
+    degraded: list[str] = []           # formats écartés car leur feuille était injoignable
     for label, leaf in leaves:
         sub = client.all_entries(leaf["href"])
-        if sub is None or not sub[3]:  # feuille inaccessible/partielle : format ignoré
+        if sub is None or not sub[3]:  # feuille inaccessible/partielle : format écarté
+            degraded.append(label)     # tracé pour que l'appelant le signale (non silencieux)
             continue
         contributed = False
         for f in sub[2]:
@@ -151,4 +154,8 @@ def fetch_product_layers(client: Client, resource_entry: dict,
         "zone_label": next(iter(zones)) if len(zones) == 1 else "",
         "edition": max(dated) if dated else "",
         "couches": [{"name": name, "urls": couches[name]} for name in sorted(couches)],
+        # Formats annoncés au capabilities mais dont la feuille était injoignable au build :
+        # absents de l'encart. Vide dans le cas nominal ; l'appelant (build._cloud_block) le
+        # remonte en avertissement pour ne pas retirer un format en silence.
+        "degraded": degraded,
     }

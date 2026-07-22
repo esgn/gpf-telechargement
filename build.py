@@ -192,6 +192,14 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
             "exploitable au build — encart omis.")
         ctx.warnings.append(f"{product.id} : cloud-native sans couche exploitable ({rid})")
         return ""
+    # Format(s) annoncé(s) au capabilities mais dont la feuille était injoignable au build :
+    # l'encart se rend avec les formats survivants, mais on ne retire pas un format en
+    # silence (cohérent avec le signalement au niveau ressource ci-dessus).
+    if layers.get("degraded"):
+        fmts = ", ".join(layers["degraded"])
+        log(f"  ! « {product.id} » : format(s) cloud-native injoignable(s) au build "
+            f"({fmts}) — retiré(s) de l'encart.")
+        ctx.warnings.append(f"{product.id} : format(s) cloud injoignable(s) au build ({fmts})")
     # Édition épinglée demandée mais absente de tous les formats → repli sur la dernière,
     # signalé (sinon l'épingle serait silencieusement ignorée : footgun).
     if product.cloud_edition and all(
@@ -201,6 +209,13 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
         ctx.warnings.append(f"{product.id} : cloud_edition « {product.cloud_edition} » "
                             "introuvable (repli dernière édition)")
     tuto_intro, tuto_tabs = _cloud_tuto(product.id)
+    # Le CSS ne sait afficher que render.MAX_CLOUD_TABS onglets : au-delà, _cloud_tabs
+    # tronque — on le signale pour que l'auteur du tuto réduise ses sections « ## ».
+    if len(tuto_tabs) > render.MAX_CLOUD_TABS:
+        log(f"  ! « {product.id} » : tuto à {len(tuto_tabs)} sections pour "
+            f"{render.MAX_CLOUD_TABS} onglets affichables — sections en trop tronquées.")
+        ctx.warnings.append(f"{product.id} : tuto à {len(tuto_tabs)} sections, "
+                            f"tronqué à {render.MAX_CLOUD_TABS} onglets")
     return render.cloud_block(layers, help_url=site["cloud_help_url"],
                               tuto_intro=tuto_intro, tuto_tabs=tuto_tabs)
 
@@ -419,8 +434,15 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
     chunk_live = _fetch_chunk_live(ctx, cat)
     render.write_stylesheet(out_dir)          # applique aussi d'éventuels ajustements CSS
     if not chunk_live:
-        log("Service cloud-native indisponible — aucun encart régénéré.")
-        return 1 if targets else 0
+        # _fetch_chunk_live renvoie {} dans DEUX cas distincts : aucun produit à accès
+        # direct déclaré (rien à faire, aucune requête émise) OU service réellement
+        # injoignable. On les sépare via `targets` pour ne pas annoncer « indisponible »
+        # alors que le service n'a même pas été contacté.
+        if targets:
+            log("Service cloud-native indisponible — aucun encart régénéré.")
+            return 1
+        log("Aucun produit à accès direct dans le catalogue — rien à régénérer.")
+        return 0
 
     patched = 0
     for product in targets:

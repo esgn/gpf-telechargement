@@ -75,6 +75,13 @@ def _highlight_code(lines: list[str]) -> str:
                      for ln in lines)
 
 
+def _emit_code(lines: list[str]) -> str:
+    """Bloc de code complet <pre><code>…</code></pre>, commentaires colorés. Point
+    d'émission UNIQUE, partagé par le bloc clôturé et le bloc non refermé en fin de
+    source, pour qu'ils rendent exactement la même chose."""
+    return "<pre><code>" + _highlight_code(lines) + "</code></pre>"
+
+
 def to_html(md: str) -> str:
     """Convertit une chaîne Markdown (sous-ensemble) en HTML. Le texte est échappé
     avant balisage : le rendu ne peut pas contenir de HTML non voulu."""
@@ -101,7 +108,7 @@ def to_html(md: str) -> str:
         # une 2ᵉ ligne ``` le ferme. Le contenu est déjà échappé (html.escape en amont).
         if in_code:
             if raw.strip().startswith("```"):
-                out.append("<pre><code>" + _highlight_code(code_lines) + "</code></pre>")
+                out.append(_emit_code(code_lines))
                 code_lines.clear()
                 in_code = False
             else:
@@ -147,7 +154,7 @@ def to_html(md: str) -> str:
         para.append(stripped)
 
     if in_code:      # bloc de code non refermé en fin de source : on le clôt proprement
-        out.append("<pre><code>" + "\n".join(code_lines) + "</code></pre>")
+        out.append(_emit_code(code_lines))
     flush_para()
     flush_list()
     return "\n".join(out)

@@ -5,17 +5,29 @@
 
 import unittest
 
-from build import _cards, _splice_cloud, _CLOUD_START, _CLOUD_END
+from build import _cards, _patch_cloud, _splice_cloud, _CLOUD_START, _CLOUD_END
 from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
-from gpf.crawl import (_group_bytes, _group_formats, _is_single_unit,
+from gpf.crawl import (Ctx, _group_bytes, _group_formats, _is_single_unit,
                        _row_sort_key)
 from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
                        zone_label, zone_sort_key)
 from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
                        last_segment, resource_id, slug)
+
+
+class _FakeClient:
+    """Client factice pour les tests SANS réseau : all_entries(href) renvoie une réponse
+    pré-enregistrée (le 4-uplet de gpf.api.Client.all_entries : total, updated, entries,
+    complete) ou None si l'href est inconnu (feuille inaccessible)."""
+
+    def __init__(self, feeds: dict):
+        self.feeds = feeds
+
+    def all_entries(self, href, parallel=True):
+        return self.feeds.get(href)
 
 
 class TestModel(unittest.TestCase):
@@ -1057,6 +1069,13 @@ class TestMarkdown(unittest.TestCase):
         # un flag « -spat » (un seul tiret) n'est PAS un commentaire
         self.assertNotIn("tok-comment", to_html("```bash\n  -spat 1 2 3 4\n```"))
 
+    def test_unterminated_code_block_still_highlighted(self):
+        # bloc non refermé en fin de source : même rendu que refermé (point d'émission
+        # unique _emit_code) → les commentaires y sont aussi colorés.
+        out = to_html("```sql\n-- filtre\nSELECT 1")
+        self.assertIn("<pre><code>", out)
+        self.assertIn('<span class="tok-comment">-- filtre</span>', out)
+
     def test_split_sections_no_heading(self):
         # aucun « ## » : tout part en intro, aucune section
         intro, secs = split_sections("juste du texte\n\nsur deux blocs")
@@ -1124,6 +1143,46 @@ class TestCloud(unittest.TestCase):
         latest = {l: e["href"] for l, e in cloud.latest_leaf_per_format(entries)}
         self.assertEqual(latest["GeoParquet"], "https://x/pq-new")
 
+    @staticmethod
+    def _file(href):
+        return {"is_dir": False, "href": href, "title": ""}
+
+    def test_fetch_product_layers_merges_and_flags_sozip(self):
+        # sonde complète : fusion des couches inter-formats, exclusion des .md5, détection
+        # SOZip (.fgb.zip), édition et emprise agrégées.
+        feeds = {
+            "R": (2, "2026-03-15", [self._leaf("PARQUET", "2026-03-15", "R/pq"),
+                                    self._leaf("FGB", "2026-03-15", "R/fgb")], True),
+            "R/pq": (3, "", [self._file("R/pq/batiment.parquet"),
+                             self._file("R/pq/adresse.parquet"),
+                             self._file("R/pq/batiment.parquet.md5")], True),   # .md5 exclu
+            "R/fgb": (2, "", [self._file("R/fgb/batiment.fgb.zip"),
+                              self._file("R/fgb/batiment.fgb.zip.md5")], True),
+        }
+        out = cloud.fetch_product_layers(_FakeClient(feeds), {"href": "R"})
+        self.assertEqual([f["label"] for f in out["formats"]], ["GeoParquet", "FlatGeoBuf"])
+        self.assertFalse(out["formats"][0]["sozip"])     # .parquet brut
+        self.assertTrue(out["formats"][1]["sozip"])       # .fgb.zip → SOZip
+        couches = {c["name"]: set(c["urls"]) for c in out["couches"]}
+        self.assertEqual(couches, {"batiment": {"GeoParquet", "FlatGeoBuf"},
+                                   "adresse": {"GeoParquet"}})   # fusion + .md5 exclu
+        self.assertEqual(out["zone_label"], "France entière")
+        self.assertEqual(out["edition"], "2026-03-15")
+        self.assertEqual(out["degraded"], [])
+
+    def test_fetch_product_layers_flags_degraded_leaf(self):
+        # feuille d'un format injoignable : format écarté MAIS signalé (degraded), les
+        # formats survivants restent affichés (plus de drop silencieux).
+        feeds = {
+            "R": (2, "", [self._leaf("PARQUET", "2026-03-15", "R/pq"),
+                          self._leaf("FGB", "2026-03-15", "R/fgb")], True),
+            "R/pq": (1, "", [self._file("R/pq/batiment.parquet")], True),
+            "R/fgb": None,                                # feuille inaccessible
+        }
+        out = cloud.fetch_product_layers(_FakeClient(feeds), {"href": "R"})
+        self.assertEqual([f["label"] for f in out["formats"]], ["GeoParquet"])
+        self.assertEqual(out["degraded"], ["FlatGeoBuf"])
+
 
 class TestCloudBlock(unittest.TestCase):
     LAYERS = {
@@ -1186,6 +1245,15 @@ class TestCloudBlock(unittest.TestCase):
         # les onglets sont AU-DESSUS de la liste des couches
         self.assertLess(with_tabs.index('class="cloud-tabs"'),
                         with_tabs.index('class="cloud-couches"'))
+
+    def test_cloud_block_caps_tuto_tabs(self):
+        # garde-fou : le CSS ne sait afficher que MAX_CLOUD_TABS panneaux → au-delà, les
+        # onglets en trop sont tronqués (pas de panneau invisible).
+        tabs = [(f"T{i}", f"<pre><code>{i}</code></pre>") for i in range(6)]
+        html = render.cloud_block(self.LAYERS, tuto_tabs=tabs)
+        self.assertEqual(html.count("cloud-tab-radio"), render.MAX_CLOUD_TABS)
+        self.assertIn(">T0</label>", html)
+        self.assertNotIn(">T4</label>", html)     # au-delà de 4 onglets : tronqué
 
     def test_card_grid_cloud_badge(self):
         html = render._card_grid([
@@ -1250,6 +1318,34 @@ class TestCloudOnly(unittest.TestCase):
         # marqueurs absents → None (le patch ne réécrit rien) ; fin avant début → None
         self.assertIsNone(_splice_cloud("<main>sans marqueurs</main>", "NEUF"))
         self.assertIsNone(_splice_cloud(_CLOUD_END + "x" + _CLOUD_START, "NEUF"))
+
+    def test_patch_cloud_missing_index_no_write(self):
+        # fiche jamais construite (pas d'index.html) → False, aucun fichier écrit.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            ctx = Ctx(_FakeClient({}), d, footer="")
+            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d,
+                              {"cloud_help_url": ""})
+            self.assertFalse(ok)
+            self.assertEqual(os.listdir(d), [])          # rien écrit
+
+    def test_patch_cloud_missing_markers_leaves_file_untouched(self):
+        # fiche sans marqueurs cloud → False, contenu inchangé (pas d'écrasement).
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            index = os.path.join(d, "index.html")
+            original = "<main>fiche sans marqueurs</main>"
+            with open(index, "w", encoding="utf-8") as f:
+                f.write(original)
+            # client factice → all_entries None → _cloud_block renvoie "" → _splice_cloud None
+            ctx = Ctx(_FakeClient({}), d, footer="")
+            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d,
+                              {"cloud_help_url": ""})
+            self.assertFalse(ok)
+            with open(index, encoding="utf-8") as f:
+                self.assertEqual(f.read(), original)     # inchangé
 
 
 if __name__ == "__main__":
