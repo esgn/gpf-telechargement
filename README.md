@@ -189,7 +189,8 @@ sont déclarées dans [`gpf/rules.py`](gpf/rules.py) et décrites en clair dans
 
 ## Reste à faire
 
-  - [ ] Finaliser l'affichage tout supports
+  - [x] Finaliser l'affichage tout supports
+  - [x] Rajouter le service de téléchargement partiel (cloud native)
   - [ ] Ajouter PVA
   - [ ] Ajouter documents d'urbanisme
  

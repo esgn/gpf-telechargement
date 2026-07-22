@@ -9,6 +9,7 @@ Stdlib uniquement (urllib + xml.etree). Aucune dépendance. Python ≥ 3.11.
     python build.py --only ADMIN-EXPRESS     # ne construire qu'un produit (test)
     python build.py --only-theme admin       # ne construire qu'un thème (test)
     python build.py --check                  # dérive catalogue ↔ API (ne construit rien)
+    python build.py --cloud-only BDTOPO      # régénère le seul encart cloud-native (sans re-crawl)
     python -m unittest                       # tests des fonctions pures (sans réseau)
 
 Prévisualisation locale (un serveur HTTP est requis, file:// ne résout pas les
@@ -27,11 +28,11 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from gpf import render
+from gpf import cloud, render
 from gpf.api import Client, fetch_capabilities, log
 from gpf.catalogue import Catalogue, CatalogueError, load_catalogue
 from gpf.crawl import Ctx, build_dir, prune_subdirs
-from gpf.markdown import to_html
+from gpf.markdown import split_sections, to_html
 from gpf.model import fmt_datetime, resource_id, slug
 from gpf.rules import uncurated_formats
 from gpf.validate import check_drift
@@ -40,11 +41,23 @@ DEFAULT_CATALOGUE = "catalogue.json"
 DEFAULT_OUT = "site"
 ASSETS_DIR = "assets"        # copié tel quel vers <out>/assets (logos de producteurs…)
 PAGES_DIR = "pages"          # sources Markdown des pages éditoriales (converties, NON copiées)
-CAPABILITIES = "/capabilities"
+TUTOS_DIR = "tutos"          # tutos cloud-native par produit : tutos/<id>.md (Markdown, convertis)
+# Services de téléchargement interrogés, avec repli si le catalogue ne les précise
+# pas. « download » = arborescence classique (service historique) ; « chunk » = accès
+# direct cloud-native (GeoParquet / FlatGeoBuf interrogeables à distance à la couche).
+DEFAULT_SERVICES = {
+    "download": {"base_url": "https://data.geopf.fr/telechargement",
+                 "capabilities_path": "/capabilities"},
+    "chunk": {"base_url": "https://data.geopf.fr/chunk/telechargement",
+              "capabilities_path": "/capabilities"},
+}
 # Repère d'insertion : _prepend_body insère l'en-tête produit juste après ce <main>
 # du gabarit render._PAGE. Doit rester synchrone avec render._PAGE.
 _MAIN_TAG = "<main>\n"
-DEFAULT_BASE = "https://data.geopf.fr/telechargement"
+# Marqueurs (commentaires HTML) encadrant l'encart cloud-native dans le index.html d'une
+# fiche : --cloud-only remplace ce qui est entre eux sans re-crawler l'arbre de télécharg.
+_CLOUD_START = "<!--cloud-native:start-->"
+_CLOUD_END = "<!--cloud-native:end-->"
 DEFAULT_HELP = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
                 "utiliser-les-services-de-la-geoplateforme/telechargement/")
 # Chapô de l'accueil (repli si "intro" absent de la config site du catalogue).
@@ -79,24 +92,31 @@ def _site(cat: Catalogue) -> dict:
         # Garde-fou de rendu : on ne déplie pas un dossier au-delà de ce nombre
         # d'entrées (le service, lui, pourrait en servir davantage). 0 = illimité.
         "max_entries": s.get("max_entries", 0),
+        # Lien optionnel vers des exemples/tutoriels d'usage cloud-native (le tutoriel
+        # détaillé vit hors de la fiche). Vide → l'encart n'affiche pas de lien.
+        "cloud_help_url": s.get("cloud_help_url", ""),
     }
 
 
-def _service(cat: Catalogue) -> dict:
-    """Accès au service de téléchargement Géoplateforme (pas le site web)."""
-    s = cat.service
+def _service(cat: Catalogue, name: str) -> dict:
+    """Accès à un service de téléchargement (pas le site web), par nom (« download »
+    ou « chunk »), avec repli sur DEFAULT_SERVICES pour toute clé absente du catalogue."""
+    s = cat.services.get(name, {})
+    d = DEFAULT_SERVICES[name]
     return {
-        "base_url": s.get("base_url", DEFAULT_BASE),
-        "capabilities_path": s.get("capabilities_path", CAPABILITIES),
+        "base_url": s.get("base_url", d["base_url"]),
+        "capabilities_path": s.get("capabilities_path", d["capabilities_path"]),
     }
 
 
-def _section_card(product, title: str, cat: Catalogue) -> dict:
+def _section_card(product, title: str, cat: Catalogue,
+                  cloud_native: bool = False) -> dict:
     """Dict d'un produit tel que stocké dans `sections` (consommé par _cards).
-    Factorise les deux branches de run_build (page éditoriale / produit crawlé)."""
+    Factorise les deux branches de run_build (page éditoriale / produit crawlé).
+    `cloud_native` : le produit expose-t-il un accès direct (badge sur la carte) ?"""
     return {"id": product.id, "title": title, "summary": product.summary,
             "update": product.update, "order": product.order,
-            "retired": product.retired,
+            "retired": product.retired, "cloud_native": cloud_native,
             "producers": cat.resolve_producers(product)}
 
 
@@ -129,19 +149,95 @@ def _warn_uncurated_formats(ctx: Ctx, resources: list[dict]) -> None:
         ctx.warnings.append(f"format « {code} » sans libellé curé (rules.FORMAT_LABELS)")
 
 
+def _fetch_chunk_live(ctx: Ctx, cat: Catalogue) -> dict:
+    """Ressources du service cloud-native (chunk), indexées par id, pour résoudre les
+    « cloud_native » déclarés (badges des cartes et encarts d'accès direct). Renvoie {}
+    si aucun produit inclus ne déclare d'accès direct (aucune requête) ou si le service
+    est inaccessible : service SECONDAIRE, on n'échoue alors PAS le build (le site de
+    téléchargement classique reste complet), on se contente d'un avertissement."""
+    if not any(p.cloud_native for p in cat.included()):
+        return {}
+    resources = fetch_capabilities(ctx.client, _service(cat, "chunk"),
+                                   label="service cloud-native (chunk)")
+    if resources is None:
+        ctx.warnings.append("service cloud-native (chunk) inaccessible "
+                            "— badges et encarts d'accès direct omis")
+        return {}
+    return {resource_id(e): e for e in resources}
+
+
+def _cloud_tuto(product_id: str) -> tuple[str, list[tuple[str, str]]]:
+    """Tutos d'un produit découpés en sections (pour les onglets) : split de
+    tutos/<product_id>.md par titres « ## », ou ("", []) si le fichier n'existe pas
+    (l'encart s'affiche alors sans onglets). Contenu éditorial maintenu à la main,
+    comme les pages/*.md."""
+    path = os.path.join(TUTOS_DIR, f"{product_id}.md")
+    if not os.path.isfile(path):
+        return "", []
+    with open(path, encoding="utf-8") as f:
+        return split_sections(f.read())
+
+
+def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
+    """HTML de l'encart d'accès direct d'un produit : sonde COURTE de sa ressource chunk
+    (cloud.fetch_product_layers, en épinglant product.cloud_edition si défini) + tutos
+    éditoriaux (tutos/<id>.md), puis rendu (render.cloud_block). Renvoie « » si la
+    ressource n'expose finalement aucune couche exploitable (ex. feuilles inaccessibles
+    au build, malgré un format annoncé au capabilities) — signalé, non bloquant. Appelé
+    seulement pour un produit à accès direct effectivement construit."""
+    layers = cloud.fetch_product_layers(ctx.client, resource_entry, product.cloud_edition)
+    if not layers:
+        rid = resource_id(resource_entry)
+        log(f"  ! « {product.id} » : ressource cloud-native « {rid} » sans couche "
+            "exploitable au build — encart omis.")
+        ctx.warnings.append(f"{product.id} : cloud-native sans couche exploitable ({rid})")
+        return ""
+    # Format(s) annoncé(s) au capabilities mais dont la feuille était injoignable au build :
+    # l'encart se rend avec les formats survivants, mais on ne retire pas un format en
+    # silence (cohérent avec le signalement au niveau ressource ci-dessus).
+    if layers.get("degraded"):
+        fmts = ", ".join(layers["degraded"])
+        log(f"  ! « {product.id} » : format(s) cloud-native injoignable(s) au build "
+            f"({fmts}) — retiré(s) de l'encart.")
+        ctx.warnings.append(f"{product.id} : format(s) cloud injoignable(s) au build ({fmts})")
+    # Édition épinglée demandée mais absente de tous les formats → repli sur la dernière,
+    # signalé (sinon l'épingle serait silencieusement ignorée : footgun).
+    if product.cloud_edition and all(
+            f["edition"] != product.cloud_edition for f in layers["formats"]):
+        log(f"  ! « {product.id} » : édition cloud épinglée « {product.cloud_edition} » "
+            "introuvable — repli sur la plus récente.")
+        ctx.warnings.append(f"{product.id} : cloud_edition « {product.cloud_edition} » "
+                            "introuvable (repli dernière édition)")
+    tuto_intro, tuto_tabs = _cloud_tuto(product.id)
+    # Le CSS ne sait afficher que render.MAX_CLOUD_TABS onglets : au-delà, _cloud_tabs
+    # tronque — on le signale pour que l'auteur du tuto réduise ses sections « ## ».
+    if len(tuto_tabs) > render.MAX_CLOUD_TABS:
+        log(f"  ! « {product.id} » : tuto à {len(tuto_tabs)} sections pour "
+            f"{render.MAX_CLOUD_TABS} onglets affichables — sections en trop tronquées.")
+        ctx.warnings.append(f"{product.id} : tuto à {len(tuto_tabs)} sections, "
+                            f"tronqué à {render.MAX_CLOUD_TABS} onglets")
+    return render.cloud_block(layers, help_url=site["cloud_help_url"],
+                              tuto_intro=tuto_intro, tuto_tabs=tuto_tabs)
+
+
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
-              only_theme: str | None, rps: float, workers: int = 8) -> int:
+              only_theme: str | None, rps: float, workers: int = 8,
+              fail_fast: bool = False) -> int:
     """Reconstruit le site : chaque produit inclus est re-crawlé (pas de cache).
 
     `only` / `only_theme` restreignent le crawl à un produit / un thème (test) ;
     dans les deux cas les autres dossiers ne sont pas purgés. Les pages de thème
     et l'accueil sont toujours régénérées à partir du catalogue complet, de sorte
-    que la navigation reste cohérente même quand un seul produit/thème est crawlé."""
+    que la navigation reste cohérente même quand un seul produit/thème est crawlé.
+
+    `fail_fast` : interrompt le build au 1er feed tombé en erreur fatale, au lieu de
+    tout collecter (fail-at-last, défaut). Le rendu global (accueil, thèmes, assets)
+    est alors sauté : le build échoue et rien n'est publié de toute façon."""
     t0 = time.monotonic()
     site = _site(cat)
-    service = _service(cat)
+    service = _service(cat, "download")
     client = Client(rps=rps, workers=workers)
-    resources = fetch_capabilities(client, service)
+    resources = fetch_capabilities(client, service, label="catalogue de téléchargement")
     if resources is None:
         return 1
     live = {resource_id(e): e for e in resources}
@@ -152,10 +248,14 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
     ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"], workers=workers)
     _warn_uncurated_formats(ctx, resources)
+    # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.
+    # {} si aucun produit ne le déclare ou si le service est indisponible (non bloquant).
+    chunk_live = _fetch_chunk_live(ctx, cat)
 
     sections: dict[str, list[dict]] = {}   # theme_id → [{id, title, summary}, …]
     keep_themes: set[str] = set()
     built = 0
+    aborted = False                        # coupé par --fail-fast (rendu global sauté)
 
     for product in cat.included():
         # 1. Résoudre l'entrée API. Une « page éditoriale » (product.page) n'a pas de
@@ -174,7 +274,17 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
         theme_dir = slug(theme)
         title = product.title or (entry and entry["title"]) or product.id
         keep_themes.add(theme_dir)
-        sections.setdefault(theme, []).append(_section_card(product, title, cat))
+        # Accès direct POSSIBLE d'après le capabilities (ressource chunk résolue ET format
+        # surfacé GeoParquet/FlatGeoBuf), sans requête de plus. C'est la condition pour
+        # SONDER le service ; le badge n'est CONFIRMÉ qu'après la sonde live (étape 3) : si
+        # l'encart s'avère vide, on retire le badge (plus bas) pour ne pas promettre un
+        # accès direct absent. Exclut les pages éditoriales (ni arbre ni encart). Pour un
+        # produit que --only ne reconstruit pas, le badge reste celui du capabilities.
+        cloud_entry = (chunk_live.get(product.cloud_native)
+                       if product.cloud_native and not product.page else None)
+        has_cloud = bool(cloud_entry and cloud.has_surfaced_format(cloud_entry))
+        card = _section_card(product, title, cat, has_cloud)
+        sections.setdefault(theme, []).append(card)
 
         # 3. Construire — sauf si un filtre --only/--only-theme exclut ce produit.
         if _filtered_out(only, only_theme, product.id, theme):
@@ -185,22 +295,47 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
             # Page éditoriale : Markdown converti en HTML, pas de crawl ni de listing.
             _build_page(ctx, product, prod_dir, title, cat.theme_label(theme))
         else:
-            _build_product(ctx, product, entry, prod_dir, title, cat.theme_label(theme))
+            # Encart d'accès direct : sonde COURTE du service chunk, seulement pour un
+            # produit à accès direct effectivement construit (haut de fiche, au-dessus
+            # de l'arbre). Vide sinon.
+            cloud_html = (_cloud_block(ctx, cloud_entry, product, site)
+                          if has_cloud else "")
+            # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
+            # build) alors que le capabilities annonçait un format : encart vide → on
+            # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
+            # fiche dépourvue d'accès direct.
+            if has_cloud and not cloud_html:
+                card["cloud_native"] = False
+            _build_product(ctx, product, entry, prod_dir, title,
+                           cat.theme_label(theme), cloud_html)
         built += 1
 
-    if not only and not only_theme:
-        prune_subdirs(out_dir, keep_themes)
-    _copy_assets(out_dir)
-    render.write_stylesheet(out_dir)          # feuille de style partagée (une fois)
-    render.write_robots(out_dir)              # robots.txt : blocage des crawlers IA
-    render.write_favicon(out_dir)             # favicon SVG partagée (une fois)
-    _write_theme_pages(ctx, cat, sections)
-    _write_home(ctx, cat, sections, site)
+        # Fail-fast : dès qu'un feed est tombé en erreur fatale, inutile de dérouler
+        # le reste du crawl — un build en échec ne publie rien (deploy conditionné à la
+        # réussite du build), on coupe donc pour ne pas brûler le temps restant. Sans
+        # l'option, on poursuit (fail-at-last) afin de lister TOUS les feeds cassés.
+        if fail_fast and ctx.errors:
+            log(f"\n--fail-fast : arrêt après {built} produit(s) "
+                f"(1re erreur fatale rencontrée).")
+            aborted = True
+            break
+
+    # Rendu global (purge, assets, feuille de style, thèmes, accueil) — sauté si on a
+    # coupé en fail-fast : la grille de cartes est partielle et rien ne sera publié.
+    if not aborted:
+        if not only and not only_theme:
+            prune_subdirs(out_dir, keep_themes)
+        _copy_assets(out_dir)
+        render.write_stylesheet(out_dir)      # feuille de style partagée (une fois)
+        render.write_robots(out_dir)          # robots.txt : blocage des crawlers IA
+        render.write_favicon(out_dir)         # favicon SVG partagée (une fois)
+        _write_theme_pages(ctx, cat, sections)
+        _write_home(ctx, cat, sections, site)
 
     elapsed = time.monotonic() - t0
     eff_rps = client.requests / elapsed if elapsed else 0.0
-    log(f"\nTerminé : {built} produit(s) construit(s), {ctx.pages} page(s), "
-        f"{client.requests} requête(s) en {elapsed/60:.1f} min "
+    log(f"\n{'Interrompu' if aborted else 'Terminé'} : {built} produit(s) construit(s), "
+        f"{ctx.pages} page(s), {client.requests} requête(s) en {elapsed/60:.1f} min "
         f"({eff_rps:.1f} req/s effectif).")
     if client.rate_limits:
         log(f"  Rate-limit : {client.rate_limits} réponse(s) 429, "
@@ -225,16 +360,110 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     return 0
 
 
-def _build_product(ctx: Ctx, product, entry, prod_dir, title, theme_label) -> None:
-    """Fiche produit : en-tête éditorial + arborescence de téléchargement.
+def _build_product(ctx: Ctx, product, entry, prod_dir, title, theme_label,
+                   cloud_html: str = "") -> None:
+    """Fiche produit : en-tête éditorial + éventuel encart d'accès direct cloud-native
+    (`cloud_html`) + arborescence de téléchargement.
 
     build_dir écrit le index.html du dossier produit (avec le listing). On le
     laisse faire, puis on relit ce listing pour le préfixer de l'en-tête produit :
     plus simple, build_dir reste inchangé et gère tous les cas (aplatissement,
-    groupement, garde-fou volumétrie)."""
+    groupement, garde-fou volumétrie). L'encart cloud-native s'insère ENTRE l'en-tête
+    et l'arbre : visible dès l'ouverture, même sur une fiche à l'arbre très long."""
     build_dir(ctx, entry["href"], prod_dir, _product_crumbs(theme_label, title), depth=1)
-    header = render.product_header(product) + "<hr>"
+    # Encart encadré de marqueurs → régénérable seul via --cloud-only (sans re-crawl).
+    cloud_section = f"{_CLOUD_START}{cloud_html}{_CLOUD_END}" if cloud_html else ""
+    header = render.product_header(product) + cloud_section + "<hr>"
     _prepend_body(os.path.join(prod_dir, "index.html"), header)
+
+
+def _splice_cloud(page: str, inner: str) -> str | None:
+    """Remplace, dans une page déjà rendue, le contenu entre les marqueurs cloud-native
+    (marqueurs inclus) par `inner` (réenveloppé des marqueurs). Renvoie la page modifiée,
+    ou None si les marqueurs sont absents/incohérents. Fonction pure."""
+    i = page.find(_CLOUD_START)
+    j = page.find(_CLOUD_END)
+    if i < 0 or j < 0 or j < i:
+        return None
+    return page[:i] + _CLOUD_START + inner + _CLOUD_END + page[j + len(_CLOUD_END):]
+
+
+def _patch_cloud(ctx: Ctx, product, resource_entry: dict, prod_dir: str, site: dict) -> bool:
+    """Régénère l'encart cloud-native d'un produit et le réinjecte dans sa fiche DÉJÀ
+    construite (`<prod_dir>/index.html`), SANS re-crawler l'arbre de téléchargement.
+    Renvoie True si la fiche a été patchée. Non destructif sinon : signale et n'écrit rien
+    si la fiche est absente ou dépourvue des marqueurs cloud (fiche à construire une fois
+    en entier au préalable)."""
+    index = os.path.join(prod_dir, "index.html")
+    if not os.path.isfile(index):
+        log(f"  ! « {product.id} » : fiche absente ({index}) — construire la fiche une fois "
+            f"d'abord : python build.py --only {product.id}")
+        ctx.warnings.append(f"{product.id} : fiche absente (build complet requis)")
+        return False
+    with open(index, encoding="utf-8") as f:
+        page = f.read()
+    patched = _splice_cloud(page, _cloud_block(ctx, resource_entry, product, site))
+    if patched is None:
+        log(f"  ! « {product.id} » : marqueurs cloud-native absents (fiche construite avant "
+            f"cette option) — reconstruire la fiche une fois : python build.py --only {product.id}")
+        ctx.warnings.append(f"{product.id} : marqueurs cloud absents (build complet requis)")
+        return False
+    with open(index, "w", encoding="utf-8") as f:
+        f.write(patched)
+    return True
+
+
+def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
+                   rps: float, workers: int = 8) -> int:
+    """Régénère UNIQUEMENT l'encart cloud-native des fiches (sonde courte du service chunk
+    + tutos), sans re-crawler les arbres de téléchargement : patche les fiches existantes
+    entre leurs marqueurs cloud, et réécrit la feuille de style partagée (pour refléter
+    d'éventuels ajustements CSS). `only` : un id de produit, ou None = tous les produits à
+    accès direct. Ne touche ni à l'accueil, ni aux pages de thème, ni aux scripts du
+    gabarit (un build complet reste nécessaire pour ceux-là)."""
+    t0 = time.monotonic()
+    site = _site(cat)
+    client = Client(rps=rps, workers=workers)
+    ctx = Ctx(client, out_dir, footer="", workers=workers)
+    targets = [p for p in cat.included()
+               if p.cloud_native and (not only or p.id == only)]
+    if only and not targets:
+        log(f"ERREUR : « {only} » n'est pas un produit à accès direct (champ « cloud_native »).")
+        return 2
+
+    chunk_live = _fetch_chunk_live(ctx, cat)
+    render.write_stylesheet(out_dir)          # applique aussi d'éventuels ajustements CSS
+    if not chunk_live:
+        # _fetch_chunk_live renvoie {} dans DEUX cas distincts : aucun produit à accès
+        # direct déclaré (rien à faire, aucune requête émise) OU service réellement
+        # injoignable. On les sépare via `targets` pour ne pas annoncer « indisponible »
+        # alors que le service n'a même pas été contacté.
+        if targets:
+            log("Service cloud-native indisponible — aucun encart régénéré.")
+            return 1
+        log("Aucun produit à accès direct dans le catalogue — rien à régénérer.")
+        return 0
+
+    patched = 0
+    for product in targets:
+        entry = chunk_live.get(product.cloud_native)
+        if not entry or not cloud.has_surfaced_format(entry):
+            log(f"  ! « {product.id} » : « {product.cloud_native} » sans accès direct exploitable — ignoré.")
+            ctx.warnings.append(f"{product.id} : cloud_native introuvable/sans format ({product.cloud_native})")
+            continue
+        prod_dir = os.path.join(out_dir, slug(cat.resolve_theme(product)), product.id)
+        if _patch_cloud(ctx, product, entry, prod_dir, site):
+            patched += 1
+            log(f"~ {product.title or product.id} : encart cloud-native régénéré")
+
+    log(f"\nTerminé : {patched}/{len(targets)} encart(s) régénéré(s), "
+        f"{client.requests} requête(s) en {time.monotonic() - t0:.1f}s "
+        f"(arbres de téléchargement NON re-crawlés).")
+    if ctx.warnings:
+        log(f"\nAvertissements ({len(ctx.warnings)}) :")
+        for w in ctx.warnings:
+            log(f"  - {w}")
+    return 0 if patched or not targets else 1
 
 
 def _build_page(ctx: Ctx, product, prod_dir, title, theme_label) -> None:
@@ -281,6 +510,7 @@ def _cards(entries: list[dict], prefix: str, depth: int = 0) -> list[dict]:
     return [{"href": f'{prefix}{e["id"]}/', "title": e["title"],
              "summary": e["summary"], "update": e.get("update", ""),
              "retired": e.get("retired", False),
+             "cloud_native": e.get("cloud_native", False),
              "producers": _card_producers(e.get("producers"), up)}
             for e in sorted(entries, key=lambda e: e["order"])]
 
@@ -342,13 +572,23 @@ def main(argv=None) -> int:
     p.add_argument("--only-theme", metavar="THEME", dest="only_theme",
                    help="ne construire que ce thème, par id (test ; ne purge pas le reste)")
     p.add_argument("--check", action="store_true", help="rapport de dérive catalogue ↔ API, sans rien construire")
+    p.add_argument("--cloud-only", nargs="?", const="", default=None, metavar="ID", dest="cloud_only",
+                   help="régénère SEULEMENT l'encart cloud-native (sans re-crawler l'arbre de "
+                        "téléchargement) : ID = un produit, ou vide = tous les produits à accès direct")
     p.add_argument("--requests-per-second", type=float, default=10, dest="rps", help="débit visé (défaut : 10)")
     p.add_argument("--workers", type=int, default=8, dest="workers",
                    help="nombre de requêtes de crawl en parallèle (défaut : 8)")
+    p.add_argument("--fail-fast", action="store_true", dest="fail_fast",
+                   help="s'arrêter au 1er feed en erreur fatale sans dérouler le reste du "
+                        "crawl (un build en échec ne publie rien de toute façon) ; défaut : "
+                        "collecter toutes les erreurs avant d'échouer")
     args = p.parse_args(argv)
 
     if args.only and args.only_theme:
         p.error("--only et --only-theme sont exclusifs (un produit OU un thème).")
+
+    if args.cloud_only is not None and (args.only or args.only_theme or args.check):
+        p.error("--cloud-only ne se combine pas avec --only / --only-theme / --check.")
 
     if args.workers < 1:
         p.error("--workers doit être ≥ 1.")
@@ -367,9 +607,14 @@ def main(argv=None) -> int:
             return 2
 
     if args.check:
-        return check_drift(Client(rps=args.rps, workers=args.workers), cat, _service(cat))
+        client = Client(rps=args.rps, workers=args.workers)
+        return check_drift(client, cat, _service(cat, "download"), _service(cat, "chunk"))
 
-    return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers)
+    if args.cloud_only is not None:
+        return run_cloud_only(cat, args.out, args.cloud_only or None, args.rps, args.workers)
+
+    return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers,
+                     args.fail_fast)
 
 
 if __name__ == "__main__":

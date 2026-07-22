@@ -27,10 +27,24 @@
     "max_entries": 50000
   },
 
-  // Accès au service de téléchargement interrogé (l'API Géoplateforme).
-  "service": {
-    "base_url": "https://data.geopf.fr/telechargement",
-    "capabilities_path": "/capabilities"
+  // Services de téléchargement interrogés :
+  //  - "download" : arborescence classique par zone/date/format (fichiers .7z, etc.) ;
+  //  - "chunk" : accès direct cloud-native (GeoParquet / FlatGeoBuf interrogeables
+  //    à distance, une couche par fichier). Un produit s'y rattache via son champ
+  //    "cloud_native" (id de la ressource chunk, souvent suffixé -PARTIEL / _PQT).
+  //    Optionnel : "cloud_edition" (date, ex. "2026-03-15") épingle une édition au lieu
+  //    de la plus récente (utile si la dernière est en cours de publication, cf. jeux
+  //    de couches incohérents entre formats). python build.py --check vérifie la dérive
+  //    des DEUX services.
+  "services": {
+    "download": {
+      "base_url": "https://data.geopf.fr/telechargement",
+      "capabilities_path": "/capabilities"
+    },
+    "chunk": {
+      "base_url": "https://data.geopf.fr/chunk/telechargement",
+      "capabilities_path": "/capabilities"
+    }
   },
 
   // Producteurs affichés sur les cartes produit. Chaque produit référence un
@@ -77,6 +91,7 @@
       "id": "ADMIN-EXPRESS-COG", "title": "ADMIN EXPRESS COG", "theme": "admin", "producer": "ign",
       "summary": "ADMIN EXPRESS conforme au Code officiel géographique (COG) INSEE au 1er janvier.",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "ADMIN-EXPRESS-COG-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - ADMIN EXPRESS COG (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - ADMIN EXPRESS COG (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
@@ -86,6 +101,7 @@
       "id": "ADMIN-EXPRESS-COG-CARTO", "title": "ADMIN EXPRESS COG CARTO", "theme": "admin", "producer": "ign",
       "summary": "ADMIN EXPRESS COG à géométrie généralisée, adaptée à la cartographie.",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "ADMIN-EXPRESS-COG-CARTO-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
@@ -95,6 +111,7 @@
       "id": "ADMIN-EXPRESS-COG-CARTO-PE", "title": "ADMIN EXPRESS COG CARTO PE", "theme": "admin", "producer": "ign",
       "summary": "ADMIN EXPRESS COG à géométrie généralisée, adaptée à la cartographie à petite échelle (« PE »).",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "ADMIN-EXPRESS-COG-CARTO-PE-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTO PE (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTO PE (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
@@ -113,6 +130,7 @@
       "id": "CONTOURS-IRIS", "title": "Contours IRIS®", "theme": "admin", "producer": ["ign", "insee"],
       "summary": "Contours des IRIS (INSEE) à moyenne échelle. Niveau intermédiaire entre IRIS GE et Contours IRIS PE.",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "CONTOURS-IRIS-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - Contours IRIS® (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - Contours IRIS® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
@@ -122,6 +140,7 @@
       "id": "CONTOURS-IRIS-PE", "title": "Contours IRIS® PE", "theme": "admin", "producer": ["ign", "insee"],
       "summary": "Contours des IRIS très généralisés, pour la cartographie statistique à petite échelle.",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "CONTOURS-IRIS-PE-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - Contours IRIS® PE (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - Contours IRIS® PE (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
@@ -131,6 +150,7 @@
       "id": "IRIS-GE", "title": "IRIS GE", "theme": "admin", "producer": ["ign", "insee"],
       "summary": "Découpage IRIS à grande échelle, calé sur le parcellaire et le bâti.",
       "update": "Annuelle (calée sur COG INSEE)",
+      "cloud_native": "IRIS-GE-PARTIEL",
       "specs": [
         { "label": "Descriptif de contenu - IRIS GE (v3.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_Limites_IRIS_3-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - IRIS GE (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" }
@@ -151,6 +171,8 @@
       "id": "BDTOPO", "title": "BD TOPO®", "theme": "topo", "producer": "ign",
       "summary": "Modélisation vectorielle 3D du territoire : bâti, réseaux, hydrographie, végétation. Précision métrique.",
       "update": "Trimestrielle",
+      "cloud_native": "BDTOPO_PQT",
+      "cloud_edition": "2026-03-15",
       "specs": [
         { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - BD TOPO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" },

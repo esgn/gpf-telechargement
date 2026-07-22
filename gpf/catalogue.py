@@ -41,7 +41,8 @@ def _as_id_list(value) -> list[str]:
 
 class Product:
     __slots__ = ("id", "title", "theme", "summary", "update", "specs", "include",
-                 "order", "producers", "retired", "page")
+                 "order", "producers", "retired", "page", "cloud_native",
+                 "cloud_edition")
 
     def __init__(self, raw: dict):
         if not isinstance(raw, dict) or not raw.get("id"):
@@ -64,6 +65,17 @@ class Product:
         # interne dédiée ; aucune ressource API n'est attendue (ni crawlée, ni
         # signalée par --check). Vide = produit normal, joint au crawl via son id.
         self.page: str = raw.get("page") or ""
+        # Accès « cloud-native » : identifiant de la ressource du service chunk
+        # (services.chunk) exposant ce produit en formats interrogeables à distance
+        # (GeoParquet / FlatGeoBuf). Explicite car l'id chunk diffère de l'id du
+        # produit (ex. « BDTOPO » → « BDTOPO_PQT », « CONTOURS-IRIS » →
+        # « CONTOURS-IRIS-PARTIEL »). Vide = pas d'accès direct (ni encart, ni badge).
+        self.cloud_native: str = raw.get("cloud_native") or ""
+        # Édition (date ISO, ex. « 2026-03-15 ») à ÉPINGLER pour l'accès direct, au lieu
+        # de la plus récente. Utile quand la dernière édition est en cours de publication
+        # (jeux de couches incohérents entre formats, cf. BD TOPO 2026-06-15). Vide
+        # (défaut) = dernière édition disponible, par format.
+        self.cloud_edition: str = raw.get("cloud_edition") or ""
         self.order: int = raw.get("order", 100)
         # id(s) du/des producteur(s), référence(s) vers catalogue.producers. Le
         # champ « producer » accepte une chaîne (« ign ») ou une liste (coédition,
@@ -80,10 +92,13 @@ class Product:
 
 
 class Catalogue:
-    def __init__(self, site: dict, service: dict, themes: list[dict],
+    def __init__(self, site: dict, services: dict, themes: list[dict],
                  products: list[Product], producers: dict[str, dict] | None = None):
         self.site = site                          # présentation du site web
-        self.service = service                    # accès au service de téléchargement
+        # Services de téléchargement interrogés, par nom : « download » (arborescence
+        # classique) et « chunk » (accès direct cloud-native). Chacun = {base_url,
+        # capabilities_path}. Résolus avec repli sur les défauts par build._service.
+        self.services = services or {}
         self.themes = themes                      # ordonnés (ordre d'affichage)
         self.products = products
         self.producers = producers or {}          # id → {name, logo}
@@ -222,5 +237,11 @@ def load_catalogue(path: str) -> Catalogue:
                         f"« {p.id} » : producteur inconnu « {pid} » "
                         f"(déclarez-le dans producers[] ou laissez-le vide)")
 
-    return Catalogue(data.get("site", {}), data.get("service", {}),
+    # Services de téléchargement : schéma actuel « services: {download, chunk} ».
+    # Repli rétro-compatible : un ancien « service » unique devient le « download ».
+    services = data.get("services")
+    if not services and data.get("service"):
+        services = {"download": data["service"]}
+
+    return Catalogue(data.get("site", {}), services or {},
                      themes, products, producers)

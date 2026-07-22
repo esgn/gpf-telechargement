@@ -8,10 +8,11 @@ des pages éditoriales de produit. Couvre :
   - paragraphes    blocs de texte           → <p>
   - inline         **gras**, *italique*,
                    `code`, [texte](url)     → <strong>/<em>/<code>/<a>
+  - bloc de code   ```…``` (clôturé)         → <pre><code> (rendu verbatim)
 
 Hors périmètre (assumé) : tableaux, listes numérotées ou imbriquées, images, HTML
-brut, blockquotes, blocs de code multi-lignes. Tout le texte est échappé (html.escape)
-AVANT d'insérer le balisage, donc une page Markdown ne peut pas injecter de HTML.
+brut, blockquotes. Tout le texte est échappé (html.escape) AVANT d'insérer le
+balisage, donc une page Markdown ne peut pas injecter de HTML.
 Les liens externes (http/https) ouvrent dans un nouvel onglet (rel=noopener), comme
 le reste du site.
 """
@@ -58,6 +59,29 @@ def _inline(text: str) -> str:
     return _CODE_MARK.sub(lambda m: f"<code>{codes[int(m.group(1))]}</code>", text)
 
 
+# Ligne de commentaire d'un bloc de code : début « # » (Python, shell, YAML…) ou
+# « -- » (SQL). Heuristique volontairement simple (pas de lexer par langage) : elle
+# couvre les tutos et suffit tant qu'un bloc n'est pas dans un langage où « # »/« -- »
+# n'introduit pas un commentaire. Un flag « -spat » (un seul tiret) n'est PAS pris.
+_CODE_COMMENT = re.compile(r"^\s*(#|--)")
+
+
+def _highlight_code(lines: list[str]) -> str:
+    """Assemble les lignes (déjà échappées) d'un bloc de code, en enveloppant les lignes
+    de COMMENTAIRE dans <span class="tok-comment"> (colorées par le CSS). Le reste est
+    laissé tel quel. Aucune coloration syntaxique au-delà des commentaires."""
+    return "\n".join(f'<span class="tok-comment">{ln}</span>'
+                     if _CODE_COMMENT.match(ln) else ln
+                     for ln in lines)
+
+
+def _emit_code(lines: list[str]) -> str:
+    """Bloc de code complet <pre><code>…</code></pre>, commentaires colorés. Point
+    d'émission UNIQUE, partagé par le bloc clôturé et le bloc non refermé en fin de
+    source, pour qu'ils rendent exactement la même chose."""
+    return "<pre><code>" + _highlight_code(lines) + "</code></pre>"
+
+
 def to_html(md: str) -> str:
     """Convertit une chaîne Markdown (sous-ensemble) en HTML. Le texte est échappé
     avant balisage : le rendu ne peut pas contenir de HTML non voulu."""
@@ -65,6 +89,8 @@ def to_html(md: str) -> str:
     out: list[str] = []
     para: list[str] = []          # lignes du paragraphe courant
     list_items: list[str] = []    # items de liste courants
+    in_code = False               # dans un bloc de code clôturé (```) ?
+    code_lines: list[str] = []    # lignes du bloc de code courant, verbatim
 
     def flush_para():
         if para:
@@ -78,12 +104,29 @@ def to_html(md: str) -> str:
             list_items.clear()
 
     for raw in lines:
+        # Bloc de code clôturé : rendu VERBATIM (ni inline, ni jointure de lignes) ;
+        # une 2ᵉ ligne ``` le ferme. Le contenu est déjà échappé (html.escape en amont).
+        if in_code:
+            if raw.strip().startswith("```"):
+                out.append(_emit_code(code_lines))
+                code_lines.clear()
+                in_code = False
+            else:
+                code_lines.append(raw)
+            continue
+
         line = raw.rstrip()
         stripped = line.strip()
 
         if not stripped:                          # ligne vide : ferme les blocs
             flush_para()
             flush_list()
+            continue
+
+        if stripped.startswith("```"):            # ``` → ouverture d'un bloc de code
+            flush_para()
+            flush_list()
+            in_code = True
             continue
 
         if re.fullmatch(r"-{3,}", stripped):      # --- → séparateur
@@ -110,6 +153,37 @@ def to_html(md: str) -> str:
         flush_list()
         para.append(stripped)
 
+    if in_code:      # bloc de code non refermé en fin de source : on le clôt proprement
+        out.append(_emit_code(code_lines))
     flush_para()
     flush_list()
     return "\n".join(out)
+
+
+_SECTION_H2 = re.compile(r"^##\s+(.+)$")
+
+
+def split_sections(md: str) -> tuple[str, list[tuple[str, str]]]:
+    """Découpe un Markdown en sections de titre « ## », pour un affichage en onglets.
+    Renvoie (intro_html, [(titre, corps_html), …]) : `intro_html` est tout ce qui précède
+    le premier « ## » (converti par to_html, « » si rien) ; puis une entrée par section,
+    son titre en texte et son corps converti. Un « ## » situé DANS un bloc de code
+    (``` … ```) n'est pas un séparateur. Fonction pure."""
+    intro: list[str] = []
+    sections: list[tuple[str, list[str]]] = []
+    in_code = False
+    for line in md.splitlines():
+        s = line.strip()
+        if s.startswith("```"):
+            in_code = not in_code
+            (sections[-1][1] if sections else intro).append(line)
+            continue
+        m = None if in_code else _SECTION_H2.match(s)
+        if m:
+            sections.append((m.group(1).strip(), []))
+        elif sections:
+            sections[-1][1].append(line)
+        else:
+            intro.append(line)
+    return (to_html("\n".join(intro)).strip(),
+            [(title, to_html("\n".join(body))) for title, body in sections])
