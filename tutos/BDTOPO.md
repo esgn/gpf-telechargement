@@ -7,8 +7,7 @@ INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;
 -- Ne lit que les groupes de lignes couvrant l'emprise, pas les 4,5 Gio du fichier.
 SELECT *
 FROM read_parquet('https://data.geopf.fr/chunk/telechargement/download/BDTOPO_PQT/BDTOPO_3-5_TOUSTHEMES_GEOPARQUET_WGS84G_FRA_2026-03-15/batiment.parquet')
-WHERE geometrie && ST_MakeEnvelope(3.2, 47.3, 3.4, 47.4)
-AND ST_Intersects(geometrie, ST_MakeEnvelope(3.2, 47.3, 3.4, 47.4));
+WHERE ST_Intersects(geometrie, ST_MakeEnvelope(3.2, 47.3, 3.4, 47.4));
 ```
 
 ## GDAL GeoParquet
