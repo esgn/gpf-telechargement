@@ -39,6 +39,7 @@ CSS = """
      l'accent, distinct du flux normal sans le concurrencer. */
   --panel-bg:#f1f6fe; --panel-border:#cadffb;
   --code-comment:#137333;   /* commentaires des blocs de code, en vert */
+  --ok:#137333;             /* confirmation « Copié » (même vert que les commentaires) */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -48,6 +49,7 @@ CSS = """
     --retired-card:#221e15; --retired-border:#3a3320; --retired-badge:#d9bd74;
     --panel-bg:#161d2a; --panel-border:#2c3b52;
     --code-comment:#7ee787;
+    --ok:#7ee787;
   }
 }
 :root[data-theme="dark"] {
@@ -57,6 +59,7 @@ CSS = """
   --retired-card:#221e15; --retired-border:#3a3320; --retired-badge:#d9bd74;
   --panel-bg:#161d2a; --panel-border:#2c3b52;
   --code-comment:#7ee787;
+  --ok:#7ee787;
 }
 * { box-sizing:border-box; }
 body {
@@ -316,14 +319,26 @@ details.cloud-tuto > summary:focus-visible { outline:2px solid var(--accent);
 .cloud-tab-radio:nth-of-type(3):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(3),
 .cloud-tab-radio:nth-of-type(4):checked ~ .cloud-tab-panels > .cloud-tab-panel:nth-child(4) {
   display:block; }
-/* Bouton « Copier » : PAS un lien — ces fichiers pèsent souvent plusieurs Gio, on
-   copie leur URL pour les interroger à distance, on ne les clique pas (un clic
-   déclencherait un téléchargement intégral). */
-.cloud-copy { cursor:pointer; font:inherit; font-size:.8rem; font-weight:600;
+/* Bouton « Copier » : un <a href> réel (l'URL du fichier) stylé en bouton. Le href
+   alimente l'aperçu natif de l'URL dans la barre d'état du navigateur au survol (comme
+   l'arbre de téléchargement) et le « Copier le lien » du menu contextuel ; mais un clic
+   gauche COPIE l'URL (le JS fait preventDefault) au lieu de télécharger ces fichiers de
+   plusieurs Gio. */
+.cloud-copy { cursor:pointer; display:inline-block; text-decoration:none;
+  font:inherit; font-size:.8rem; font-weight:600;
   color:var(--accent); background:transparent; border:1px solid var(--panel-border);
-  border-radius:6px; padding:.15rem .5rem; white-space:nowrap; }
+  border-radius:6px; padding:.15rem .5rem; white-space:nowrap;
+  transition:color .15s ease, border-color .15s ease; }
+/* <a> stylé en bouton : on neutralise le soulignement au survol et la couleur :visited
+   hérités des liens globaux (a:hover / a:visited), pour un rendu identique à l'ancien
+   <button>. Seule la bordure réagit au survol. */
+.cloud-copy:hover, .cloud-copy:visited { text-decoration:none; color:var(--accent); }
 .cloud-copy:hover { border-color:var(--accent); }
 .cloud-copy:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Confirmation après clic (classe posée ~1,2 s par le JS) : le contrôle passe au vert.
+   Sélecteur composé .cloud-copy.cloud-copied (0,2,0) pour l'emporter sur .cloud-copy:hover
+   (0,1,1) : le curseur est encore sur le bouton juste après le clic. */
+.cloud-copy.cloud-copied { color:var(--ok); border-color:var(--ok); }
 .cloud-none { color:var(--muted); }
 /* Colonnes de format (2e, 3e…) : compactes, calées à droite (comme .num). */
 table.cloud-layers th:not(:first-child),
@@ -804,9 +819,9 @@ def product_header(product) -> str:
 _CLOUD_COPY_JS = (
     "<script>document.addEventListener('click',function(e){"
     "var b=e.target.closest('.cloud-copy');if(!b)return;e.preventDefault();"
-    "var u=b.getAttribute('data-url'),done=function(){"
-    "var o=b.textContent;b.textContent='Copié';"
-    "setTimeout(function(){b.textContent=o;},1200);};"
+    "var u=b.getAttribute('href'),done=function(){"
+    "var o=b.textContent;b.textContent='Copié';b.classList.add('cloud-copied');"
+    "setTimeout(function(){b.textContent=o;b.classList.remove('cloud-copied');},1200);};"
     "if(navigator.clipboard&&navigator.clipboard.writeText){"
     "navigator.clipboard.writeText(u).then(done,function(){});}"
     "else{var t=document.createElement('textarea');t.value=u;"
@@ -847,19 +862,26 @@ def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
     """Encart « accès direct pour l'analyse » d'une fiche produit : replié par défaut
     (<details>), inséré en HAUT de fiche (au-dessus de l'arbre de téléchargement, qui
     reste inchangé). Annonce les formats cloud-native (GeoParquet, FlatGeoBuf), montre
-    les tutos en onglets, puis déplie la liste des couches avec, par format, un bouton
-    copiant l'URL du fichier (jamais un lien : ces fichiers pèsent souvent plusieurs Gio
-    et se copient pour être interrogés à distance, pas cliqués). `layers` : structure de
+    les tutos en onglets, puis déplie la liste des couches avec, par format, un <a href>
+    stylé en bouton dont le clic COPIE l'URL du fichier au lieu de la suivre : le href
+    alimente l'aperçu natif de l'URL dans la barre d'état du navigateur au survol, mais
+    ces fichiers pèsent souvent plusieurs Gio et se copient pour être interrogés à
+    distance, pas cliqués. `layers` : structure de
     cloud.fetch_product_layers. `help_url` : lien optionnel vers des tutoriels externes.
     `tuto_intro`/`tuto_tabs` : tutos (tutos/<produit>.md découpé par
     gpf.markdown.split_sections), rendus en ONGLETS CSS au-dessus des couches ; omis si
     `tuto_tabs` est vide. Renvoie « » si `layers` est vide (rien à montrer)."""
     if not layers or not layers.get("formats") or not layers.get("couches"):
         return ""
-    fmt_labels = [f["label"] for f in layers["formats"]]
+    # (clé, libellé affiché) par format. Le libellé nu (f["label"]) reste la CLÉ de
+    # c["urls"] ; l'affiché reçoit « (SOZip) » quand le format est livré en archive
+    # seek-optimized (FlatGeoBuf zippé, cf. cloud.fetch_product_layers), pour le
+    # distinguer d'un FlatGeoBuf brut sans allonger l'URL ni changer la clé.
+    labels = [(f["label"], f'{f["label"]} (SOZip)' if f.get("sozip") else f["label"])
+              for f in layers["formats"]]
 
     # Ligne méta : formats · emprise (si uniforme) · un fichier par couche · édition.
-    meta = [", ".join(esc(l) for l in fmt_labels)]
+    meta = [", ".join(esc(disp) for _, disp in labels)]
     if layers.get("zone_label"):
         meta.append(esc(layers["zone_label"]))
     meta.append("un fichier par couche")
@@ -869,19 +891,19 @@ def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
     # Tableau couches × formats. Chaque cellule de format : bouton « Copier » (data-url)
     # ou « — » si la couche n'existe pas dans ce format. data-label = format : sert de
     # libellé de colonne en mode « cartes » (mobile), où l'en-tête est masqué.
-    head = "<th>Couche</th>" + "".join(f"<th>{esc(l)}</th>" for l in fmt_labels)
+    head = "<th>Couche</th>" + "".join(f"<th>{esc(disp)}</th>" for _, disp in labels)
     trs = []
     for c in layers["couches"]:
         cells = [f'<td>{esc(c["name"])}</td>']
-        for l in fmt_labels:
-            url = c["urls"].get(l)
+        for key, disp in labels:
+            url = c["urls"].get(key)
             if url:
                 cells.append(
-                    f'<td data-label="{esc(l)}"><button type="button"'
-                    f' class="cloud-copy" data-url="{esc(url)}"'
-                    f' title="Copier l\'URL {esc(l)}">Copier</button></td>')
+                    f'<td data-label="{esc(disp)}"><a class="cloud-copy"'
+                    f' href="{esc(url)}"'
+                    f' title="Copier l\'URL {esc(disp)}">Copier</a></td>')
             else:
-                cells.append(f'<td class="cloud-none" data-label="{esc(l)}">—</td>')
+                cells.append(f'<td class="cloud-none" data-label="{esc(disp)}">—</td>')
         trs.append(f"<tr>{''.join(cells)}</tr>")
     table = ('<div class="scroll"><table class="listing cloud-layers">'
              f'<thead><tr>{head}</tr></thead><tbody>{"".join(trs)}</tbody></table></div>')
@@ -891,7 +913,7 @@ def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
     how = ('<p class="cloud-how">Interrogez la donnée à distance avec DuckDB, GDAL '
            "ou Pyarrow : seuls les objets que vous filtrez (par emprise ou par attribut) "
            "sont rapatriés, jamais le fichier entier. "
-           "Données disponibles uniquement sur le <a href=\"https://cartes.gouv.fr/aide/fr/partenaires/ign/generalites-ign/actualites/2026-06-flatgeobuf-geoparquet/\" target=\"_blank\" rel=\"noopener\">service de téléchargement partiel</a>.")
+           "Données interrogeables via le <a href=\"https://cartes.gouv.fr/aide/fr/partenaires/ign/generalites-ign/actualites/2026-06-flatgeobuf-geoparquet/\" target=\"_blank\" rel=\"noopener\">service de téléchargement partiel</a>.")
     if help_url:
         how += (f' <a href="{esc(help_url)}" target="_blank" rel="noopener">'
                 "exemples et tutoriels</a>.")

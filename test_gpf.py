@@ -1127,8 +1127,8 @@ class TestCloud(unittest.TestCase):
 
 class TestCloudBlock(unittest.TestCase):
     LAYERS = {
-        "formats": [{"label": "GeoParquet", "edition": "2026-06-15"},
-                    {"label": "FlatGeoBuf", "edition": "2026-06-15"}],
+        "formats": [{"label": "GeoParquet", "edition": "2026-06-15", "sozip": False},
+                    {"label": "FlatGeoBuf", "edition": "2026-06-15", "sozip": True}],
         "zone_label": "France entière",
         "edition": "2026-06-15",
         "couches": [
@@ -1147,14 +1147,17 @@ class TestCloudBlock(unittest.TestCase):
         self.assertIn("Couches disponibles (2)", html)   # décompte des couches
         self.assertIn("France entière", html)
         self.assertIn("dernière édition 2026-06-15", html)
-        # bouton de copie (pas un lien) portant l'URL en data-url
-        self.assertIn('data-url="https://x/cours_d_eau.parquet"', html)
-        self.assertIn('data-url="https://x/cours_d_eau.fgb.zip"', html)
+        # contrôle de copie = <a href> stylé en bouton, portant l'URL du fichier (le href
+        # sert l'aperçu natif dans la barre d'état ; le clic copie, cf. cloud-copy JS)
         self.assertIn("cloud-copy", html)
-        # couche absente d'un format → cellule « — », pas de bouton fantôme
+        self.assertIn('href="https://x/cours_d_eau.parquet"', html)
+        self.assertIn('href="https://x/cours_d_eau.fgb.zip"', html)
+        # format SOZip → suffixe « (SOZip) » (ligne méta + colonne) ; GeoParquet reste nu
+        self.assertIn("FlatGeoBuf (SOZip)", html)
+        self.assertNotIn("GeoParquet (SOZip)", html)
+        # couche absente d'un format → cellule « — », pas de lien fantôme
         self.assertIn('class="cloud-none"', html)
-        # jamais de lien <a> cliquable vers un .parquet (téléchargement intégral évité)
-        self.assertNotIn('href="https://x/troncon_de_route.parquet"', html)
+        self.assertIn('href="https://x/troncon_de_route.parquet"', html)  # présent en GeoParquet
 
     def test_cloud_block_help_link_optional(self):
         self.assertNotIn("exemples et tutoriels", render.cloud_block(self.LAYERS))

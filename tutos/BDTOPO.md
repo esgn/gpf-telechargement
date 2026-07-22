@@ -4,7 +4,6 @@ Extraction des bâtiments sur la boite englobante de la commune de Menou (58210)
 
 ```sql
 INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;
-SET http_timeout = 300;
 -- Ne lit que les groupes de lignes couvrant l'emprise, pas les 4,5 Gio du fichier.
 SELECT *
 FROM read_parquet('https://data.geopf.fr/chunk/telechargement/download/BDTOPO_PQT/BDTOPO_3-5_TOUSTHEMES_GEOPARQUET_WGS84G_FRA_2026-03-15/batiment.parquet')
@@ -27,7 +26,7 @@ ogr2ogr bati_pqt.gpkg \
 ## GDAL FlatGeoBuf SOZip
 
 ```bash
-# Attention ici les FlatGeoBuf sont SOZippés
+# Attention les FlatGeoBuf sont SOZippés
 # Il faut utiliser /vsizip/vsicurl/
 
 ogr2ogr bati_fgb.gpkg \

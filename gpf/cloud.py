@@ -98,8 +98,8 @@ def fetch_product_layers(client: Client, resource_entry: dict,
     Structure renvoyée (consommée par render.cloud_block) :
 
         {
-          "formats": [ {"label": "GeoParquet", "edition": "2026-06-15"},
-                       {"label": "FlatGeoBuf", "edition": "2026-06-15"} ],   # ordonné
+          "formats": [ {"label": "GeoParquet", "edition": "2026-06-15", "sozip": False},
+                       {"label": "FlatGeoBuf", "edition": "2026-06-15", "sozip": True} ],   # ordonné
           "zone_label": "France entière",   # si uniforme sur les feuilles retenues, sinon ""
           "edition": "2026-06-15",          # édition la plus récente (ligne méta)
           "couches": [ {"name": "troncon_de_route",
@@ -119,6 +119,7 @@ def fetch_product_layers(client: Client, resource_entry: dict,
     editions: dict[str, str] = {}      # label → date d'édition, formats ayant contribué
     couches: dict[str, dict] = {}
     zones: set[str] = set()
+    sozip: set[str] = set()            # formats dont les fichiers sont livrés en .zip
     for label, leaf in leaves:
         sub = client.all_entries(leaf["href"])
         if sub is None or not sub[3]:  # feuille inaccessible/partielle : format ignoré
@@ -128,6 +129,11 @@ def fetch_product_layers(client: Client, resource_entry: dict,
             if f["is_dir"] or is_md5_file(f["href"], f["title"]):
                 continue
             couches.setdefault(layer_name(f["href"]), {})[label] = f["href"]
+            # Un fichier .zip trahit un FlatGeoBuf livré en archive SOZip (seek-optimized
+            # ZIP) : zippé mais toujours interrogeable par range requests (/vsizip/), à
+            # distinguer d'un FlatGeoBuf brut. Sert au libellé « (SOZip) » de la fiche.
+            if f["href"].lower().endswith(".zip"):
+                sozip.add(label)
             contributed = True
         if contributed:
             editions[label] = leaf.get("editionDate") or ""
@@ -140,7 +146,7 @@ def fetch_product_layers(client: Client, resource_entry: dict,
     return {
         # Uniquement les formats ayant effectivement fourni des couches (pas de colonne
         # fantôme si une feuille était vide/inaccessible). Ordre = CLOUD_FORMAT_LABELS.
-        "formats": [{"label": lbl, "edition": editions[lbl]}
+        "formats": [{"label": lbl, "edition": editions[lbl], "sozip": lbl in sozip}
                     for lbl in CLOUD_FORMAT_LABELS if lbl in editions],
         "zone_label": next(iter(zones)) if len(zones) == 1 else "",
         "edition": max(dated) if dated else "",
