@@ -3,7 +3,7 @@ Extraction des communes du département de la Nièvre (58), par filtre sur le co
 ## DuckDB
 
 ```sql
-INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;
+INSTALL httpfs; LOAD httpfs;
 
 SELECT *
 FROM read_parquet('https://data.geopf.fr/chunk/telechargement/download/ADMIN-EXPRESS-COG-CARTO-PARTIEL/ADMIN-EXPRESS-COG-CARTO_4-0__GEOPARQUET_WGS84G_FRA_2026-01-01/commune.parquet')
