@@ -478,6 +478,14 @@
       ]
     },
     {
+      "id": "BCAE", "title": "BCAE", "theme": "ocs", "producer": "ign",
+      "summary": "Bonnes Conditions Agricoles et Environnementales : zones humides et tourbières (BCAE 2), bandes tampons le long des cours d'eau (BCAE 4), prairies sensibles Natura 2000 (BCAE 9).",
+      "update": "Annuelle",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - BCAE (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_BCAE.pdf", "type": "contenu" }
+      ]
+    },
+    {
       "id": "CARHAB", "title": "CarHab", "theme": "ocs", "producer": ["inpn", "ign"],
       "summary": "Cartographie nationale des habitats naturels et semi-naturels de France métropolitaine, produite dans le cadre du programme CarHab (OFB, MNHN, IGN, Réseau des CBN).",
       "update": "Programme national en cours",
