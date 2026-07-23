@@ -72,6 +72,7 @@
     { "id": "parcellaire", "label": "Parcellaire & cadastre" },
     { "id": "lidar",       "label": "LiDAR & nuages de points" },
     { "id": "altimetrie",  "label": "Altimétrie & relief" },
+    { "id": "geodesie",    "label": "Géodésie & nivellement" },
     { "id": "foret-env",   "label": "Forêt & environnement" },
     { "id": "ocs",         "label": "Occupation du sol" }
   ],
@@ -252,6 +253,16 @@
     //     { "label": "Fiche produit - Open Maps for Europe", "url": "https://www.mapsforeurope.org/datasets/euro-global-map" }
     //   ]
     // },
+
+    // --- Géodésie & nivellement -----------------------------------------------
+    {
+      "id": "GEODESIE", "title": "Données de géodésie et nivellement", "theme": "geodesie", "producer": "ign",
+      "summary": "Points géodésiques et repères de nivellement, avec lien vers leur fiche signalétique. Métropole et outre-mer.",
+      "update": "Mensuelle",
+      "specs": [
+        { "label": "Descriptif de contenu et de livraison - Données de géodésie et nivellement (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_DL_DONNEES_DE_GEODESIE_ET_NIVELLEMENT_1-0.pdf", "type": "contenu" }
+      ]
+    },
 
     // --- Adresses -------------------------------------------------------------
        {
