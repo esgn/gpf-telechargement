@@ -15,7 +15,7 @@ render.write_page / render.listing_table."""
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 import re
 import shutil
@@ -31,20 +31,36 @@ _DEFAULT_HTTP_WORKERS = 8  # défaut si Ctx n'en reçoit pas (surchargeable via 
 _NOT_FETCHED = object()
 
 
+class FailFast(Exception):
+    """Arrêt immédiat du crawl (--fail-fast) : levé à la 1re erreur fatale, dénoue la
+    récursion jusqu'à run_build. Rien ne sera publié de toute façon (deploy conditionné
+    à la réussite du build), dérouler le reste ne ferait que brûler du temps CI."""
+
+
 class Ctx:
     """État mutable partagé pendant un build : client, dossier de sortie, méta de
     page, garde-fou volumétrie, compteurs."""
 
     def __init__(self, client: Client, out_dir: str, footer: str,
-                 max_entries: int = 0, workers: int = _DEFAULT_HTTP_WORKERS):
+                 max_entries: int = 0, workers: int = _DEFAULT_HTTP_WORKERS,
+                 fail_fast: bool = False):
         self.client = client
         self.out_dir = out_dir
         self.footer = footer          # bloc <footer> HTML pré-rendu (identique partout)
         self.max_entries = max_entries
         self.workers = workers        # requêtes de crawl en parallèle (throttle global du client)
+        self.fail_fast = fail_fast    # couper au 1er feed mort (cf. fatal)
         self.pages = 0
         self.errors: list[str] = []      # réseau/données : rendent le build fatal
         self.warnings: list[str] = []    # éditorial : signalés mais non bloquants
+
+    def fatal(self, msg: str) -> None:
+        """Enregistre une erreur fatale (réseau/données : le site rendu serait
+        incomplet). En fail-fast, la 1re coupe le build sur place ; sinon on collecte
+        pour lister TOUS les feeds cassés en fin de build (fail-at-last, défaut)."""
+        self.errors.append(msg)
+        if self.fail_fast:
+            raise FailFast(msg)
 
     def write_page(self, fs_dir, title, body, crumbs):
         render.write_page(fs_dir, title, body, crumbs=crumbs, footer=self.footer,
@@ -134,14 +150,14 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
         # laisser un site cohérent en dev, sans réutiliser d'ancien contenu.
         ctx.write_page(fs_dir, crumbs[-1][0], render.unavailable_body(feed_url),
                       render.breadcrumb(crumbs))
-        ctx.errors.append(f"{crumbs[-1][0]} : feed inaccessible ({feed_url})")
+        ctx.fatal(f"{crumbs[-1][0]} : feed inaccessible ({feed_url})")
         return ("dir", None)
     total, feed_updated, entries, complete = got
     if not complete:
         # Listing partiel (page intermédiaire échouée) : on publie ce qu'on a mais
         # on le signale comme fatal, pour ne pas publier un dossier tronqué.
         log(f"  ! {crumbs[-1][0]} : listing partiel (une page a échoué)")
-        ctx.errors.append(f"{crumbs[-1][0]} : listing partiel ({feed_url})")
+        ctx.fatal(f"{crumbs[-1][0]} : listing partiel ({feed_url})")
 
     if ctx.max_entries and total > ctx.max_entries:
         log(f"  ~ {crumbs[-1][0]} : trop volumineux ({total} entrées), non déplié")
@@ -191,17 +207,40 @@ def _fetch_dirs(ctx: Ctx, dirs: list[dict]) -> dict[str, object]:
     en parallèle sur `ctx.workers`, sous le throttle global du client. La récursion
     (_write_dir / _build_grouped) réutilise ensuite ces listings via `fetched=…` au
     lieu de refetcher : le seul rôle de cette fonction est donc de PARALLÉLISER la
-    récupération des sous-feeds frères, que la descente ferait sinon une par une."""
+    récupération des sous-feeds frères, que la descente ferait sinon une par une.
+
+    En fail-fast, on inspecte les résultats À MESURE : un sous-feed mort ici est une
+    erreur fatale ACQUISE — la descente l'enregistrerait telle quelle (build_dir avec
+    `fetched=None`). L'acter tout de suite est ce qui rend l'option utile : sur un gros
+    produit ce préchargement porte des MILLIERS de frères, et attendre son terme pour
+    constater la fatalité, c'est attendre des heures pour un build déjà condamné."""
     if len(dirs) < 2:
         return {}
     workers = min(ctx.workers, len(dirs))
     # Ces appels tournent DANS le pool de largeur : chacun pagine son sous-feed en
     # série (parallel=False) pour ne pas imbriquer un 2e pool (cf. all_entries).
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {e["href"]: executor.submit(ctx.client.all_entries, e["href"],
-                                              parallel=False)
+        futures = {executor.submit(ctx.client.all_entries, e["href"],
+                                   parallel=False): e
                    for e in dirs}
-        return {href: future.result() for href, future in futures.items()}
+        listings = {}
+        for future in as_completed(futures):
+            entry = futures[future]
+            listings[entry["href"]] = future.result()
+            if listings[entry["href"]] is None and ctx.fail_fast:
+                # cancel_futures : abandonne les prefetch encore EN FILE. Sans lui, la
+                # sortie du `with` les exécuterait quand même (shutdown wait=True) —
+                # soit des heures de crawl après la décision d'arrêter. Les ≤ workers
+                # requêtes en VOL, elles, ne sont pas interruptibles : le pool joint
+                # ses threads, d'où un dernier délai borné par leurs essais restants.
+                executor.shutdown(wait=False, cancel_futures=True)
+                # Libellé : la sous-ressource elle-même. Le fil d'Ariane que la descente
+                # aurait donné (souvent le groupe : « 2025-07-15 ») n'existe pas encore,
+                # le regroupement zone/date/format n'ayant lieu qu'APRÈS ce
+                # préchargement. Le href, lui, identifie le feed dans les deux cas.
+                ctx.fatal(f"{entry['title'] or resource_id(entry)} : "
+                          f"feed inaccessible ({entry['href']})")
+        return listings
 
 
 def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):

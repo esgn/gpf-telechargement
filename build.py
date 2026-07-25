@@ -31,7 +31,7 @@ from zoneinfo import ZoneInfo
 from gpf import cloud, render
 from gpf.api import Client, fetch_capabilities, log
 from gpf.catalogue import Catalogue, CatalogueError, load_catalogue
-from gpf.crawl import Ctx, build_dir, prune_subdirs
+from gpf.crawl import Ctx, FailFast, build_dir, prune_subdirs
 from gpf.markdown import split_sections, to_html
 from gpf.model import fmt_datetime, resource_id, slug
 from gpf.rules import uncurated_formats
@@ -246,7 +246,8 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     now_paris = datetime.now(ZoneInfo("Europe/Paris"))
     generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
-    ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"], workers=workers)
+    ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"],
+              workers=workers, fail_fast=fail_fast)
     _warn_uncurated_formats(ctx, resources)
     # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.
     # {} si aucun produit ne le déclare ou si le service est indisponible (non bloquant).
@@ -291,34 +292,37 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
             continue
         log(f"+ {title}")
         prod_dir = os.path.join(out_dir, theme_dir, product.id)
-        if product.page:
-            # Page éditoriale : Markdown converti en HTML, pas de crawl ni de listing.
-            _build_page(ctx, product, prod_dir, title, cat.theme_label(theme))
-        else:
-            # Encart d'accès direct : sonde COURTE du service chunk, seulement pour un
-            # produit à accès direct effectivement construit (haut de fiche, au-dessus
-            # de l'arbre). Vide sinon.
-            cloud_html = (_cloud_block(ctx, cloud_entry, product, site)
-                          if has_cloud else "")
-            # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
-            # build) alors que le capabilities annonçait un format : encart vide → on
-            # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
-            # fiche dépourvue d'accès direct.
-            if has_cloud and not cloud_html:
-                card["cloud_native"] = False
-            _build_product(ctx, product, entry, prod_dir, title,
-                           cat.theme_label(theme), cloud_html)
-        built += 1
-
-        # Fail-fast : dès qu'un feed est tombé en erreur fatale, inutile de dérouler
-        # le reste du crawl — un build en échec ne publie rien (deploy conditionné à la
-        # réussite du build), on coupe donc pour ne pas brûler le temps restant. Sans
-        # l'option, on poursuit (fail-at-last) afin de lister TOUS les feeds cassés.
-        if fail_fast and ctx.errors:
-            log(f"\n--fail-fast : arrêt après {built} produit(s) "
-                f"(1re erreur fatale rencontrée).")
+        # Fail-fast : la 1re erreur fatale remonte d'ICI sous forme de FailFast (cf.
+        # Ctx.fatal), depuis n'importe quelle profondeur du crawl — y compris depuis le
+        # préchargement des sous-feeds, qui sur un gros produit dure des dizaines de
+        # minutes. Un build en échec ne publie rien (deploy conditionné à la réussite du
+        # build) : on coupe donc au plus tôt pour ne pas brûler le temps restant. Sans
+        # l'option, rien ne lève et on poursuit (fail-at-last) afin de lister TOUS les
+        # feeds cassés.
+        try:
+            if product.page:
+                # Page éditoriale : Markdown converti en HTML, pas de crawl ni de listing.
+                _build_page(ctx, product, prod_dir, title, cat.theme_label(theme))
+            else:
+                # Encart d'accès direct : sonde COURTE du service chunk, seulement pour un
+                # produit à accès direct effectivement construit (haut de fiche, au-dessus
+                # de l'arbre). Vide sinon.
+                cloud_html = (_cloud_block(ctx, cloud_entry, product, site)
+                              if has_cloud else "")
+                # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
+                # build) alors que le capabilities annonçait un format : encart vide → on
+                # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
+                # fiche dépourvue d'accès direct.
+                if has_cloud and not cloud_html:
+                    card["cloud_native"] = False
+                _build_product(ctx, product, entry, prod_dir, title,
+                               cat.theme_label(theme), cloud_html)
+        except FailFast as stop:
+            log(f"\n--fail-fast : arrêt sur « {product.id} » après "
+                f"{built} produit(s) complet(s) — {stop}")
             aborted = True
             break
+        built += 1
 
     # Rendu global (purge, assets, feuille de style, thèmes, accueil) — sauté si on a
     # coupé en fail-fast : la grille de cartes est partielle et rien ne sera publié.

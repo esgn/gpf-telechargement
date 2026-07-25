@@ -10,8 +10,8 @@ from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
-from gpf.crawl import (Ctx, _group_bytes, _group_formats, _is_single_unit,
-                       _row_sort_key)
+from gpf.crawl import (Ctx, FailFast, _fetch_dirs, _group_bytes, _group_formats,
+                       _is_single_unit, _row_sort_key)
 from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
                        zone_label, zone_sort_key)
 from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
@@ -1346,6 +1346,47 @@ class TestCloudOnly(unittest.TestCase):
             self.assertFalse(ok)
             with open(index, encoding="utf-8") as f:
                 self.assertEqual(f.read(), original)     # inchangé
+
+
+class TestFailFast(unittest.TestCase):
+    def test_fatal_records_and_raises_only_in_fail_fast(self):
+        # défaut (fail-at-last) : on collecte sans lever, pour lister TOUS les feeds cassés
+        ctx = Ctx(_FakeClient({}), ".", footer="")
+        ctx.fatal("A : feed inaccessible (a)")
+        ctx.fatal("B : feed inaccessible (b)")
+        self.assertEqual(len(ctx.errors), 2)
+        # fail-fast : la 1re erreur est enregistrée ET coupe le build
+        ctx = Ctx(_FakeClient({}), ".", footer="", fail_fast=True)
+        with self.assertRaises(FailFast):
+            ctx.fatal("A : feed inaccessible (a)")
+        self.assertEqual(ctx.errors, ["A : feed inaccessible (a)"])
+
+    def test_fetch_dirs_fail_fast_cuts_on_first_dead_feed(self):
+        # 3 frères dont un injoignable (absent du client factice → None).
+        dirs = [{"href": "vivant-1", "title": "SR 1"},
+                {"href": "mort", "title": "SR morte"},
+                {"href": "vivant-2", "title": "SR 2"}]
+        feeds = {"vivant-1": (0, "", [], True), "vivant-2": (0, "", [], True)}
+        # défaut : le préchargement va au bout, le None est rendu tel quel à la descente
+        # (c'est build_dir qui actera la fatalité, avec son fil d'Ariane).
+        ctx = Ctx(_FakeClient(feeds), ".", footer="")
+        got = _fetch_dirs(ctx, dirs)
+        self.assertEqual(set(got), {"vivant-1", "mort", "vivant-2"})
+        self.assertIsNone(got["mort"])
+        self.assertEqual(ctx.errors, [])
+        # fail-fast : le feed mort est acté DANS le préchargement, sans attendre son
+        # terme, sous le libellé de la sous-ressource (pas de fil d'Ariane à ce stade).
+        ctx = Ctx(_FakeClient(feeds), ".", footer="", fail_fast=True)
+        with self.assertRaises(FailFast):
+            _fetch_dirs(ctx, dirs)
+        self.assertEqual(ctx.errors, ["SR morte : feed inaccessible (mort)"])
+
+    def test_fetch_dirs_single_dir_not_prefetched(self):
+        # < 2 frères : pas de préchargement du tout, donc rien à acter ici (la fatalité
+        # est décidée à la descente). Vrai aussi en fail-fast.
+        ctx = Ctx(_FakeClient({}), ".", footer="", fail_fast=True)
+        self.assertEqual(_fetch_dirs(ctx, [{"href": "mort", "title": "x"}]), {})
+        self.assertEqual(ctx.errors, [])
 
 
 if __name__ == "__main__":
