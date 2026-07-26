@@ -182,7 +182,7 @@
     },
     {
       "id": "BDTOPO-DIFF", "title": "BD TOPO® - Différentiel", "theme": "topo", "producer": "ign",
-      "summary": "Évolutions de la BD TOPO entre deux éditions, pour mettre à jour une base sans tout re-télécharger.",
+      "summary": "Évolutions de la BD TOPO® entre deux éditions, pour mettre à jour une base sans tout re-télécharger.",
       "update": "Trimestrielle (suit la BD TOPO®)",
       "specs": [
         { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
@@ -192,10 +192,10 @@
     },
     {
       "id": "BDTOPO_EXPRESS", "title": "BD TOPO® Express", "theme": "topo", "producer": "ign",
-      "summary": "Édition hebdomadaire de la BD TOPO : même contenu, fraîcheur privilégiée, moins de contrôles.",
+      "summary": "Édition hebdomadaire de la BD TOPO® : même contenu, fraîcheur privilégiée, moins de contrôles.",
       "update": "Hebdomadaire (chaque lundi)",
       "specs": [
-        { "label": "Présentation du contenu - BD TOPO Express (PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/PC_BDTOPO_Express.pdf", "type": "fiche" },
+        { "label": "Présentation du contenu - BD TOPO® Express (PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/PC_BDTOPO_Express.pdf", "type": "fiche" },
         { "label": "Descriptif de contenu - BD TOPO® Express (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - BD TOPO® Express (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" },
         { "label": "Explorateur de la documentation et du modèle BD TOPO®", "url": "https://bdtopoexplorer.ign.fr/", "type": "explorateur" }        
@@ -203,7 +203,7 @@
     },
     {
       "id": "BDTOPOHisto", "title": "BD TOPO® Historique", "theme": "topo", "producer": "ign",
-      "summary": "Archives d'anciennes éditions de la BD TOPO (années 1990-2000), pour l'analyse d'évolution.",
+      "summary": "Archives d'anciennes éditions de la BD TOPO® (années 1990-2000), pour l'analyse d'évolution.",
       "update": "Aucune. Archive d'anciennes éditions BD TOPO®",
       "specs": [
         { "label": "Descriptif de contenu - BD TOPO® Historique (v1.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/Note_BDTOPO_1-0.pdf", "type": "contenu" },
