@@ -250,6 +250,48 @@ table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-t
 .listing td.formats { color:var(--muted); }
 
 /* --------------------------------------------------------------------------- */
+/* Export de la liste : barre « Télécharger en lot » au-dessus du listing, plus  */
+/* un mode d'emploi repliable. Même fond bleuté et même liseré accent que        */
+/* l'encart cloud-native : c'est le même registre — une action outillée, posée   */
+/* à côté du flux de navigation sans s'y confondre. cf. render.download_bar.     */
+/* --------------------------------------------------------------------------- */
+.dl-bar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
+  margin:1rem 0 0; padding:.6rem .8rem;
+  border:1px solid var(--panel-border); border-left:3px solid var(--accent);
+  border-radius:10px; background:var(--panel-bg); }
+.dl-icon { font-size:1rem; line-height:1; flex:0 0 auto; }
+/* Le libellé occupe la place restante et repousse donc les deux boutons à
+   droite ; en écran étroit il passe seul sur sa ligne (cf. média mobile). */
+.dl-lead { flex:1; min-width:10rem; font-size:.93rem; }
+.dl-meta { display:block; font-size:.8rem; color:var(--muted);
+           font-variant-numeric:tabular-nums; }
+a.dl-btn { flex:0 0 auto; font-size:.8rem; font-weight:600;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  color:var(--accent); background:var(--card);
+  border:1px solid var(--panel-border); border-radius:6px;
+  padding:.3rem .65rem; white-space:nowrap; }
+/* Flèche en préfixe : un nom de fichier seul n'annonce pas un téléchargement
+   (les deux liens portent l'attribut download). */
+a.dl-btn::before { content:"↓ "; opacity:.65; font-weight:400; }
+a.dl-btn:hover { border-color:var(--accent); text-decoration:none; }
+a.dl-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+/* Mode d'emploi : replié par défaut, le marqueur natif remplacé par un chevron
+   (même parti pris que details.cloud-dt). Le bloc de code qu'il contient reçoit
+   gratuitement le bouton « Copier » de _CODE_COPY_JS, qui enrichit tous les
+   pre>code de la page. */
+details.dl-how { margin:.5rem 0 0; }
+details.dl-how > summary { list-style:none; cursor:pointer;
+  display:inline-flex; align-items:center; gap:.3rem;
+  font-size:.85rem; font-weight:600; color:var(--accent); }
+details.dl-how > summary::-webkit-details-marker { display:none; }
+details.dl-how > summary::after { content:"▾"; font-size:.75em; }
+details.dl-how[open] > summary::after { content:"▴"; }
+details.dl-how > summary:hover { text-decoration:underline; }
+details.dl-how > summary:focus-visible { outline:2px solid var(--accent);
+  outline-offset:2px; border-radius:4px; }
+.dl-how-note { font-size:.85rem; color:var(--muted); margin:.5rem 0 0; }
+
+/* --------------------------------------------------------------------------- */
 /* Accès cloud-native : badge de carte (⚡) + encart « accès direct » repliable  */
 /* en tête de fiche. Fond bleuté (--panel-*), distinct du flux normal. cf.        */
 /* render.cloud_block et gpf.cloud.                                              */
@@ -474,6 +516,12 @@ footer .repo-link:hover { color:var(--fg); }
      consulté depuis un mobile ; on le masque simplement sous ce seuil. Le hash reste
      présent dans le HTML (accessible sur écran large / au partage), juste non affiché. */
   .listing td.md5 { display:none; }
+  /* Barre d'export : le libellé prend sa ligne, les deux boutons s'étirent en
+     dessous pour offrir une cible tactile pleine largeur. C'est ici que l'export
+     compte le plus : le MD5 étant masqué juste au-dessus, MD5SUMS devient le seul
+     moyen d'obtenir les empreintes depuis un mobile. */
+  .dl-lead { flex:1 1 100%; }
+  a.dl-btn { flex:1 1 auto; text-align:center; padding:.4rem .65rem; }
 }
 """
 
@@ -606,6 +654,12 @@ def md_to_html_inline(md: str) -> str:
 STYLESHEET = "style.css"   # nom du CSS partagé, à la racine du site
 ROBOTS = "robots.txt"      # fichier robots servi à la racine du site
 FAVICON = "favicon.svg"    # icône SVG servie à la racine du site
+# Listes d'export, écrites dans CHAQUE dossier qui liste des fichiers (et non à la
+# racine, contrairement aux trois ci-dessus) : voir write_download_lists. Les noms
+# suivent la convention des miroirs de distribution, pour que les outils habituels
+# les consomment sans configuration.
+URLS_TXT = "urls.txt"      # une URL par ligne, pour wget -i / aria2c -i
+MD5SUMS = "MD5SUMS"        # empreintes au format coreutils, pour md5sum -c
 
 
 def write_stylesheet(out_dir: str) -> None:
@@ -727,6 +781,108 @@ def listing_table(rows: list[dict]) -> str:
         '<div class="scroll"><table class="listing">'
         "<thead><tr><th>Nom</th><th>Modifié le</th><th>Taille</th><th>MD5</th></tr></thead>"
         f'<tbody>{"".join(trs)}</tbody></table></div>')
+
+
+# --------------------------------------------------------------------------- #
+# Export de la liste des fichiers d'un dossier : deux fichiers statiques écrits à
+# côté du index.html (urls.txt, MD5SUMS) et la barre qui les propose. Les rows
+# attendues sont celles de listing_table, filtrées sur les FICHIERS (is_dir faux) :
+# tout est déjà disponible côté crawl, rien de nouveau à collecter.
+# --------------------------------------------------------------------------- #
+def _total_bytes(rows: list[dict]) -> int | None:
+    """Taille cumulée d'un listing, ou None si une seule taille manque : mieux vaut
+    n'annoncer aucun total qu'un total faux (même principe que crawl._group_bytes)."""
+    sizes = [r.get("size") for r in rows]
+    return sum(sizes) if sizes and all(s is not None for s in sizes) else None
+
+
+def urls_txt(rows: list[dict]) -> str:
+    """Contenu de URLS_TXT : une URL absolue par ligne, dans l'ordre d'affichage.
+    Volontairement SANS en-tête de provenance : `wget -i` ne reconnaît pas « # »
+    comme un commentaire et tenterait de télécharger la ligne."""
+    return "".join(f'{r["href"]}\n' for r in rows)
+
+
+def md5sums(rows: list[dict]) -> str:
+    """Contenu de MD5SUMS au format coreutils — « <hash><espace><espace><nom> » —
+    vérifiable par `md5sum -c MD5SUMS` depuis le dossier de téléchargement. Le
+    second séparateur est le marqueur de mode : espace pour le mode texte (la
+    convention des miroirs), « * » pour le mode binaire ; les deux sont acceptés à
+    la relecture et sont équivalents hors Windows. Une entrée sans empreinte est
+    omise plutôt que de produire une ligne que md5sum refuserait."""
+    return "".join(f'{r["md5"]}  {r["name"]}\n' for r in rows if r.get("md5"))
+
+
+def download_bar(rows: list[dict]) -> str:
+    """Barre « Télécharger en lot » posée au-dessus du listing : nombre de fichiers,
+    taille cumulée, les deux listes en téléchargement direct, et un mode d'emploi
+    repliable.
+
+    Rendue à partir de DEUX fichiers seulement. Sur un dossier à fichier unique —
+    le cas majoritaire, plus de dix mille pages — elle n'apporterait rien : le lien
+    du tableau est juste en dessous et son MD5 dans la colonne d'à côté. Les deux
+    listes sont en revanche écrites même là (write_download_lists), pour que l'URL
+    reste régulière d'une page à l'autre.
+
+    Les deux <a> sont délibérément HORS du <summary> voisin : un lien dans un
+    <summary> a un comportement de clic ambigu (suivre le lien, replier le
+    <details>, ou les deux selon le navigateur). Ils portent `download` pour se
+    comporter à l'identique — sans lui, urls.txt s'afficherait dans le navigateur
+    (servi en text/plain) là où MD5SUMS, sans extension, se téléchargerait."""
+    if len(rows) < 2:
+        return ""
+    total = _total_bytes(rows)
+    meta = f"{len(rows)} fichiers"
+    if total is not None:
+        meta += f" · {human_size(total)}"
+    return (
+        '<div class="dl-bar">'
+        '<span class="dl-icon" aria-hidden="true">⬇</span>'
+        '<span class="dl-lead"><strong>Télécharger en lot</strong>'
+        f'<span class="dl-meta">{meta}</span></span>'
+        f'<a class="dl-btn" href="{URLS_TXT}" download>{URLS_TXT}</a>'
+        f'<a class="dl-btn" href="{MD5SUMS}" download>{MD5SUMS}</a>'
+        "</div>"
+        '<details class="dl-how">'
+        "<summary>Comment utiliser ces fichiers&nbsp;?</summary>"
+        '<div class="dl-how-body"><pre><code>'
+        f'<span class="tok-comment"># télécharger les {len(rows)} fichiers '
+        "(-j 5 : le service est plafonné à 10 requêtes/s)</span>\n"
+        f"aria2c -i {URLS_TXT} -j 5 -x 2 -c\n\n"
+        '<span class="tok-comment"># vérifier les empreintes une fois terminé</span>\n'
+        f"md5sum -c {MD5SUMS}"
+        "</code></pre>"
+        '<p class="dl-how-note">Sans aria2, <code>wget -i urls.txt -c</code> '
+        "télécharge mais ne vérifie rien : la seconde commande reste nécessaire. "
+        "<code>md5sum</code> est un outil GNU — sur macOS, <code>md5 -r</code> ; "
+        "sous Windows, <code>certutil -hashfile &lt;fichier&gt; MD5</code>.</p>"
+        "</div></details>")
+
+
+def _write_or_remove(path: str, content: str) -> None:
+    """Écrit `content`, ou supprime le fichier s'il n'y a rien à écrire. Le build
+    est incrémental — il réécrit un site existant sans le purger, cf.
+    crawl.prune_subdirs — donc sans cette suppression la liste d'un build précédent
+    survivrait à un dossier vidé ou devenu page de navigation."""
+    if content:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+    elif os.path.exists(path):
+        os.remove(path)
+
+
+def write_download_lists(fs_dir: str, rows: list[dict]) -> None:
+    """Écrit URLS_TXT et MD5SUMS à côté du index.html d'un dossier de fichiers.
+
+    Écrits dès qu'il y a UN fichier, là où la barre n'apparaît qu'à partir de deux :
+    ce découplage est ce qui rend le contrat d'URL énonçable — « toute page qui
+    liste des fichiers expose ses deux listes » — sans encombrer l'interface des
+    milliers de dossiers à fichier unique. Les niveaux de NAVIGATION n'en ont pas :
+    on les appelle avec une liste vide, ce qui efface aussi les listes d'un build
+    précédent."""
+    os.makedirs(fs_dir, exist_ok=True)
+    _write_or_remove(os.path.join(fs_dir, URLS_TXT), urls_txt(rows))
+    _write_or_remove(os.path.join(fs_dir, MD5SUMS), md5sums(rows))
 
 
 def nav_table(rows: list[dict]) -> str:

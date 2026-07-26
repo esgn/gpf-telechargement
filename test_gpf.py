@@ -10,8 +10,8 @@ from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
-from gpf.crawl import (Ctx, FailFast, _fetch_dirs, _group_bytes, _group_formats,
-                       _is_single_unit, _row_sort_key)
+from gpf.crawl import (Ctx, FailFast, _emit, _fetch_dirs, _group_bytes,
+                       _group_formats, _is_single_unit, _row_sort_key)
 from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
                        zone_label, zone_sort_key)
 from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
@@ -975,6 +975,155 @@ class TestRender(unittest.TestCase):
         self.assertIn('class="repo-link"', f)
         self.assertIn('href="https://github.com/u/r"', f)
         self.assertNotIn("repo-link", render.render_footer("x.", "g"))
+
+
+class TestDownloadLists(unittest.TestCase):
+    """Export de la liste des fichiers : contenu des deux listes, seuil d'affichage
+    de la barre, écriture sur disque et branchement dans le crawl."""
+
+    @staticmethod
+    def _file(name, md5, size=1024):
+        return {"name": name, "href": f"https://d/{name}", "is_dir": False,
+                "date": "2026-06-15", "size": size, "md5": md5}
+
+    _A = "d41d8cd98f00b204e9800998ecf8427e"
+    _B = "0cc175b9c0f1b6a831c399e269772661"
+
+    # ---- contenu des deux listes ------------------------------------------- #
+    def test_urls_txt_one_absolute_url_per_line(self):
+        out = render.urls_txt([self._file("a.7z", self._A),
+                               self._file("b.7z", self._B)])
+        self.assertEqual(out, "https://d/a.7z\nhttps://d/b.7z\n")
+        self.assertTrue(out.endswith("\n"))      # dernière ligne terminée
+
+    def test_urls_txt_has_no_comment_header(self):
+        # `wget -i` ne reconnaît pas « # » : un en-tête serait pris pour une URL.
+        self.assertNotIn("#", render.urls_txt([self._file("a.7z", self._A)]))
+
+    def test_md5sums_coreutils_format(self):
+        out = render.md5sums([self._file("a.7z", self._A),
+                              self._file("b.7z", self._B)])
+        self.assertEqual(out, f"{self._A}  a.7z\n{self._B}  b.7z\n")
+        self.assertIn("  ", out.splitlines()[0])   # deux espaces, pas un
+
+    def test_md5sums_skips_entry_without_hash(self):
+        # Une ligne sans empreinte serait refusée par md5sum : on l'omet.
+        out = render.md5sums([self._file("a.7z", self._A),
+                              self._file("b.7z", None)])
+        self.assertEqual(out, f"{self._A}  a.7z\n")
+
+    # ---- barre : seuil et contenu ------------------------------------------ #
+    def test_download_bar_absent_below_two_files(self):
+        self.assertEqual(render.download_bar([]), "")
+        self.assertEqual(render.download_bar([self._file("a.7z", self._A)]), "")
+
+    def test_download_bar_shows_count_total_and_both_links(self):
+        html = render.download_bar([self._file("a.7z", self._A, 2048),
+                                    self._file("b.7z", self._B, 2048)])
+        self.assertIn("2 fichiers · 4.0 Kio", html)
+        self.assertIn('href="urls.txt" download', html)
+        self.assertIn('href="MD5SUMS" download', html)
+
+    def test_download_bar_omits_total_when_a_size_is_missing(self):
+        # Jamais de total faux : une taille inconnue et le total disparaît.
+        html = render.download_bar([self._file("a.7z", self._A, 2048),
+                                    self._file("b.7z", self._B, None)])
+        self.assertIn("2 fichiers", html)
+        self.assertNotIn("·", html.split("</span>")[0])
+
+    def test_download_bar_keeps_links_outside_summary(self):
+        # Un <a> dans un <summary> a un comportement de clic ambigu : les liens
+        # doivent rester dans la barre, avant le <details> du mode d'emploi.
+        html = render.download_bar([self._file("a.7z", self._A),
+                                    self._file("b.7z", self._B)])
+        self.assertLess(html.index('href="MD5SUMS"'), html.index("<summary>"))
+
+    def test_download_bar_command_block_gets_copy_button(self):
+        # _CODE_COPY_JS enrichit tous les pre>code : le mode d'emploi en profite.
+        html = render.download_bar([self._file("a.7z", self._A),
+                                    self._file("b.7z", self._B)])
+        self.assertIn("<pre><code>", html)
+        self.assertIn("md5sum -c MD5SUMS", html)
+
+    # ---- écriture sur disque ---------------------------------------------- #
+    def test_write_download_lists_writes_both_files(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            render.write_download_lists(d, [self._file("a.7z", self._A),
+                                            self._file("b.7z", self._B)])
+            with open(os.path.join(d, "urls.txt"), encoding="utf-8") as f:
+                self.assertEqual(f.read(), "https://d/a.7z\nhttps://d/b.7z\n")
+            with open(os.path.join(d, "MD5SUMS"), encoding="utf-8") as f:
+                self.assertIn(f"{self._A}  a.7z", f.read())
+
+    def test_write_download_lists_writes_on_single_file(self):
+        # Écrites dès UN fichier, même si la barre ne s'affiche pas : c'est ce
+        # découplage qui rend le contrat d'URL régulier.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            render.write_download_lists(d, [self._file("a.7z", self._A)])
+            self.assertTrue(os.path.exists(os.path.join(d, "urls.txt")))
+            self.assertTrue(os.path.exists(os.path.join(d, "MD5SUMS")))
+
+    def test_write_download_lists_removes_stale_lists(self):
+        # Build incrémental : un dossier vidé (ou devenu page de navigation) ne doit
+        # pas conserver les listes du build précédent.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            render.write_download_lists(d, [self._file("a.7z", self._A)])
+            render.write_download_lists(d, [])
+            self.assertFalse(os.path.exists(os.path.join(d, "urls.txt")))
+            self.assertFalse(os.path.exists(os.path.join(d, "MD5SUMS")))
+
+    # ---- branchement dans le crawl ---------------------------------------- #
+    def _emit_in_tmp(self, rows, **kw):
+        """Rend un listing dans un dossier temporaire ; renvoie (html, dossier)."""
+        import os
+        import tempfile
+        d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, d, True)
+        ctx = Ctx(_FakeClient({}), d, "<footer>f</footer>")
+        _emit(ctx, d, [("Accueil", 1), ("Dossier", 0)], rows, **kw)
+        with open(os.path.join(d, "index.html"), encoding="utf-8") as f:
+            return f.read(), d
+
+    def test_emit_file_listing_writes_lists_and_shows_bar(self):
+        import os
+        html, d = self._emit_in_tmp([self._file("a.7z", self._A),
+                                     self._file("b.7z", self._B)])
+        self.assertIn('class="dl-bar"', html)
+        self.assertIn("2 fichiers", html)
+        self.assertTrue(os.path.exists(os.path.join(d, "urls.txt")))
+        self.assertTrue(os.path.exists(os.path.join(d, "MD5SUMS")))
+
+    def test_emit_nav_page_has_neither_lists_nor_bar(self):
+        import os
+        rows = [{"name": "FXX", "href": "FXX/", "formats": None, "size": 2048}]
+        html, d = self._emit_in_tmp(rows, table=render.nav_table)
+        self.assertNotIn("dl-bar", html)
+        self.assertFalse(os.path.exists(os.path.join(d, "urls.txt")))
+        self.assertFalse(os.path.exists(os.path.join(d, "MD5SUMS")))
+
+    def test_emit_excludes_subdirs_from_lists_and_count(self):
+        # Un listing peut mêler fichiers et sous-dossiers : seuls les fichiers
+        # comptent, et un dossier n'a rien à faire dans urls.txt.
+        import os
+        rows = [{"name": "sub", "href": "sub/", "is_dir": True, "date": "",
+                 "size": None, "md5": None},
+                self._file("a.7z", self._A),
+                self._file("b.7z", self._B)]
+        html, d = self._emit_in_tmp(rows)
+        self.assertIn("2 fichiers", html)          # le dossier n'est pas compté
+        with open(os.path.join(d, "urls.txt"), encoding="utf-8") as f:
+            self.assertEqual(f.read().splitlines(), ["https://d/a.7z", "https://d/b.7z"])
+
+    def test_emit_bar_precedes_the_table(self):
+        html, _ = self._emit_in_tmp([self._file("a.7z", self._A),
+                                     self._file("b.7z", self._B)])
+        self.assertLess(html.index('class="dl-bar"'), html.index('class="listing"'))
 
 
 class TestMarkdown(unittest.TestCase):
