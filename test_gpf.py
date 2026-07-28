@@ -979,7 +979,7 @@ class TestRender(unittest.TestCase):
 
 class TestDownloadLists(unittest.TestCase):
     """Export de la liste des fichiers : contenu des deux listes, seuil d'affichage
-    de la barre, écriture sur disque et branchement dans le crawl."""
+    de la ligne, écriture sur disque et branchement dans le crawl."""
 
     @staticmethod
     def _file(name, md5, size=1024):
@@ -1020,7 +1020,7 @@ class TestDownloadLists(unittest.TestCase):
     def test_download_bar_shows_count_total_and_both_links(self):
         html = render.download_bar([self._file("a.7z", self._A, 2048),
                                     self._file("b.7z", self._B, 2048)])
-        self.assertIn("2 fichiers · 4.0 Kio", html)
+        self.assertIn('class="dl-meta">2 fichiers · 4.0 Kio</span>', html)
         self.assertIn('href="urls.txt" download', html)
         self.assertIn('href="MD5SUMS" download', html)
 
@@ -1028,15 +1028,21 @@ class TestDownloadLists(unittest.TestCase):
         # Jamais de total faux : une taille inconnue et le total disparaît.
         html = render.download_bar([self._file("a.7z", self._A, 2048),
                                     self._file("b.7z", self._B, None)])
-        self.assertIn("2 fichiers", html)
-        self.assertNotIn("·", html.split("</span>")[0])
+        self.assertIn('class="dl-meta">2 fichiers</span>', html)
 
     def test_download_bar_keeps_links_outside_summary(self):
         # Un <a> dans un <summary> a un comportement de clic ambigu : les liens
-        # doivent rester dans la barre, avant le <details> du mode d'emploi.
+        # doivent rester dans la ligne, avant le <details> du mode d'emploi.
         html = render.download_bar([self._file("a.7z", self._A),
                                     self._file("b.7z", self._B)])
         self.assertLess(html.index('href="MD5SUMS"'), html.index("<summary>"))
+
+    def test_download_bar_how_to_names_the_two_lists(self):
+        # Le résumé doit nommer les deux listes : « ces fichiers » se lisait comme
+        # les archives du tableau juste en dessous.
+        html = render.download_bar([self._file("a.7z", self._A),
+                                    self._file("b.7z", self._B)])
+        self.assertIn("<summary>Comment utiliser urls.txt et MD5SUMS", html)
 
     def test_download_bar_command_block_gets_copy_button(self):
         # _CODE_COPY_JS enrichit tous les pre>code : le mode d'emploi en profite.
@@ -1058,7 +1064,7 @@ class TestDownloadLists(unittest.TestCase):
                 self.assertIn(f"{self._A}  a.7z", f.read())
 
     def test_write_download_lists_writes_on_single_file(self):
-        # Écrites dès UN fichier, même si la barre ne s'affiche pas : c'est ce
+        # Écrites dès UN fichier, même si la ligne ne s'affiche pas : c'est ce
         # découplage qui rend le contrat d'URL régulier.
         import os
         import tempfile

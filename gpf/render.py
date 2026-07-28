@@ -250,43 +250,39 @@ table.listing { width:100%; border-collapse:collapse; font-size:.94rem; margin-t
 .listing td.formats { color:var(--muted); }
 
 /* --------------------------------------------------------------------------- */
-/* Export de la liste : barre « Télécharger en lot » au-dessus du listing, plus  */
-/* un mode d'emploi repliable. Même fond bleuté et même liseré accent que        */
-/* l'encart cloud-native : c'est le même registre — une action outillée, posée   */
-/* à côté du flux de navigation sans s'y confondre. cf. render.download_bar.     */
+/* Export de la liste : une LIGNE DE SERVICE au-dessus du listing (les deux      */
+/* listes en téléchargement direct) et un mode d'emploi repliable. Sans encart   */
+/* ni bouton, à la différence de l'accès cloud-native : ce n'est pas une         */
+/* fonctionnalité à annoncer mais un outil au service du tableau qu'il surmonte, */
+/* il ne doit pas lui prendre le regard. cf. render.download_bar.                */
 /* --------------------------------------------------------------------------- */
-.dl-bar { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;
-  margin:1rem 0 0; padding:.6rem .8rem;
-  border:1px solid var(--panel-border); border-left:3px solid var(--accent);
-  border-radius:10px; background:var(--panel-bg); }
-.dl-icon { font-size:1rem; line-height:1; flex:0 0 auto; }
-/* Le libellé occupe la place restante et repousse donc les deux boutons à
-   droite ; en écran étroit il passe seul sur sa ligne (cf. média mobile). */
-.dl-lead { flex:1; min-width:10rem; font-size:.93rem; }
-.dl-meta { display:block; font-size:.8rem; color:var(--muted);
-           font-variant-numeric:tabular-nums; }
-a.dl-btn { flex:0 0 auto; font-size:.8rem; font-weight:600;
-  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  color:var(--accent); background:var(--card);
-  border:1px solid var(--panel-border); border-radius:6px;
-  padding:.3rem .65rem; white-space:nowrap; }
-/* Flèche en préfixe : un nom de fichier seul n'annonce pas un téléchargement
-   (les deux liens portent l'attribut download). */
-a.dl-btn::before { content:"↓ "; opacity:.65; font-weight:400; }
-a.dl-btn:hover { border-color:var(--accent); text-decoration:none; }
-a.dl-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.dl-bar { margin:1.2rem 0 0; font-size:.85rem; color:var(--muted); }
+.dl-meta { font-variant-numeric:tabular-nums; }
+/* Les deux listes : des noms de fichiers, donc en monospace, et des liens
+   ordinaires (couleur de lien du site, pas de cadre). La flèche en préfixe
+   annonce le téléchargement — un nom de fichier seul ne le dit pas (les deux
+   <a> portent l'attribut download). Le .85em est la compensation appliquée partout
+   ailleurs au monospace (cf. code, pre) : à taille de pixel égale, il paraît plus gros
+   que le sans-serif qui l'entoure. */
+a.dl-file { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+            font-size:.85em; white-space:nowrap; }
+/* Marge EN PLUS de l'espace du HTML : une espace seule est trop serrée entre un nom
+   de fichier et la flèche du suivant. */
+a.dl-file + a.dl-file { margin-left:.4rem; }
+a.dl-file::before { content:"↓ "; opacity:.6; }
+a.dl-file:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 /* Mode d'emploi : replié par défaut, le marqueur natif remplacé par un chevron
-   (même parti pris que details.cloud-dt). Le bloc de code qu'il contient reçoit
-   gratuitement le bouton « Copier » de _CODE_COPY_JS, qui enrichit tous les
-   pre>code de la page. */
-details.dl-how { margin:.5rem 0 0; }
+   (même parti pris que details.cloud-dt), dans le même registre discret que la
+   ligne au-dessus. Le bloc de code qu'il contient reçoit gratuitement le bouton
+   « Copier » de _CODE_COPY_JS, qui enrichit tous les pre>code de la page. */
+details.dl-how { margin:.15rem 0 0; }
 details.dl-how > summary { list-style:none; cursor:pointer;
   display:inline-flex; align-items:center; gap:.3rem;
-  font-size:.85rem; font-weight:600; color:var(--accent); }
+  font-size:.85rem; color:var(--muted); }
 details.dl-how > summary::-webkit-details-marker { display:none; }
 details.dl-how > summary::after { content:"▾"; font-size:.75em; }
 details.dl-how[open] > summary::after { content:"▴"; }
-details.dl-how > summary:hover { text-decoration:underline; }
+details.dl-how > summary:hover { color:var(--link); text-decoration:underline; }
 details.dl-how > summary:focus-visible { outline:2px solid var(--accent);
   outline-offset:2px; border-radius:4px; }
 .dl-how-note { font-size:.85rem; color:var(--muted); margin:.5rem 0 0; }
@@ -516,12 +512,10 @@ footer .repo-link:hover { color:var(--fg); }
      consulté depuis un mobile ; on le masque simplement sous ce seuil. Le hash reste
      présent dans le HTML (accessible sur écran large / au partage), juste non affiché. */
   .listing td.md5 { display:none; }
-  /* Barre d'export : le libellé prend sa ligne, les deux boutons s'étirent en
-     dessous pour offrir une cible tactile pleine largeur. C'est ici que l'export
-     compte le plus : le MD5 étant masqué juste au-dessus, MD5SUMS devient le seul
-     moyen d'obtenir les empreintes depuis un mobile. */
-  .dl-lead { flex:1 1 100%; }
-  a.dl-btn { flex:1 1 auto; text-align:center; padding:.4rem .65rem; }
+  /* Export : cible tactile un peu plus haute que le seul texte. C'est ici que
+     l'export compte le plus : le MD5 étant masqué juste au-dessus, MD5SUMS devient
+     le seul moyen d'obtenir les empreintes depuis un mobile. */
+  a.dl-file { display:inline-block; padding:.25rem 0; }
 }
 """
 
@@ -785,7 +779,7 @@ def listing_table(rows: list[dict]) -> str:
 
 # --------------------------------------------------------------------------- #
 # Export de la liste des fichiers d'un dossier : deux fichiers statiques écrits à
-# côté du index.html (urls.txt, MD5SUMS) et la barre qui les propose. Les rows
+# côté du index.html (urls.txt, MD5SUMS) et la ligne qui les propose. Les rows
 # attendues sont celles de listing_table, filtrées sur les FICHIERS (is_dir faux) :
 # tout est déjà disponible côté crawl, rien de nouveau à collecter.
 # --------------------------------------------------------------------------- #
@@ -814,9 +808,10 @@ def md5sums(rows: list[dict]) -> str:
 
 
 def download_bar(rows: list[dict]) -> str:
-    """Barre « Télécharger en lot » posée au-dessus du listing : nombre de fichiers,
+    """Ligne « Télécharger en lot » posée au-dessus du listing : nombre de fichiers,
     taille cumulée, les deux listes en téléchargement direct, et un mode d'emploi
-    repliable.
+    repliable. Rendu discret (une ligne de texte, pas un encart) : cet outil sert le
+    tableau qui le suit, il ne doit pas lui disputer l'attention.
 
     Rendue à partir de DEUX fichiers seulement. Sur un dossier à fichier unique —
     le cas majoritaire, plus de dix mille pages — elle n'apporterait rien : le lien
@@ -836,26 +831,28 @@ def download_bar(rows: list[dict]) -> str:
     if total is not None:
         meta += f" · {human_size(total)}"
     return (
-        '<div class="dl-bar">'
-        '<span class="dl-icon" aria-hidden="true">⬇</span>'
-        '<span class="dl-lead"><strong>Télécharger en lot</strong>'
-        f'<span class="dl-meta">{meta}</span></span>'
-        f'<a class="dl-btn" href="{URLS_TXT}" download>{URLS_TXT}</a>'
-        f'<a class="dl-btn" href="{MD5SUMS}" download>{MD5SUMS}</a>'
-        "</div>"
+        # L'espace entre les deux liens est DANS le HTML, pas seulement en marge CSS :
+        # sans elle, un copier-coller de la ligne rend « urls.txtMD5SUMS ».
+        '<p class="dl-bar">Télécharger en lot '
+        f'(<span class="dl-meta">{meta}</span>)&nbsp;: '
+        f'<a class="dl-file" href="{URLS_TXT}" download>{URLS_TXT}</a> '
+        f'<a class="dl-file" href="{MD5SUMS}" download>{MD5SUMS}</a>'
+        "</p>"
         '<details class="dl-how">'
-        "<summary>Comment utiliser ces fichiers&nbsp;?</summary>"
+        # Les deux listes sont NOMMÉES : « ces fichiers » se lisait comme les
+        # archives du tableau juste en dessous, pas comme les deux listes.
+        f"<summary>Comment utiliser {URLS_TXT} et {MD5SUMS}&nbsp;?</summary>"
         '<div class="dl-how-body"><pre><code>'
         f'<span class="tok-comment"># télécharger les {len(rows)} fichiers '
-        "(-j 5 : le service est plafonné à 10 requêtes/s)</span>\n"
+        "(-j 5 : le service de téléchargement est plafonné à 10 requêtes/s)</span>\n"
         f"aria2c -i {URLS_TXT} -j 5 -x 2 -c\n\n"
         '<span class="tok-comment"># vérifier les empreintes une fois terminé</span>\n'
         f"md5sum -c {MD5SUMS}"
         "</code></pre>"
-        '<p class="dl-how-note">Sans aria2, <code>wget -i urls.txt -c</code> '
-        "télécharge mais ne vérifie rien : la seconde commande reste nécessaire. "
-        "<code>md5sum</code> est un outil GNU — sur macOS, <code>md5 -r</code> ; "
-        "sous Windows, <code>certutil -hashfile &lt;fichier&gt; MD5</code>.</p>"
+        '<p class="dl-how-note">Sans aria2, '
+        f"<code>wget -i {URLS_TXT} -c</code> télécharge aussi bien mais en séquentiel. "
+        "<code>md5sum</code> est un outil GNU/LINUX. Sur macOS, <code>md5 -r</code>. "
+        "Sous Windows, <code>certutil -hashfile &lt;fichier&gt; MD5</code>.</p>"
         "</div></details>")
 
 
@@ -874,7 +871,7 @@ def _write_or_remove(path: str, content: str) -> None:
 def write_download_lists(fs_dir: str, rows: list[dict]) -> None:
     """Écrit URLS_TXT et MD5SUMS à côté du index.html d'un dossier de fichiers.
 
-    Écrits dès qu'il y a UN fichier, là où la barre n'apparaît qu'à partir de deux :
+    Écrits dès qu'il y a UN fichier, là où la ligne n'apparaît qu'à partir de deux :
     ce découplage est ce qui rend le contrat d'URL énonçable — « toute page qui
     liste des fichiers expose ses deux listes » — sans encombrer l'interface des
     milliers de dossiers à fichier unique. Les niveaux de NAVIGATION n'en ont pas :

@@ -383,12 +383,12 @@ def _build_grouped(ctx, fs_dir, crumbs, entries, levels, depth, product_id=None,
 
 
 def _emit(ctx, fs_dir, crumbs, rows, *, table=render.listing_table):
-    """Écrit le index.html d'un dossier : fil d'Ariane, remontée, barre d'export,
+    """Écrit le index.html d'un dossier : fil d'Ariane, remontée, ligne d'export,
     table. `table` est le rendu de listing employé : render.listing_table pour des
     fichiers (défaut), render.nav_table pour un niveau de navigation (groupement
     zone/date/…).
 
-    Les listes d'export (urls.txt/MD5SUMS) et la barre qui les propose ne concernent
+    Les listes d'export (urls.txt/MD5SUMS) et la ligne qui les propose ne concernent
     que les listings de FICHIERS. Une page de navigation reçoit donc une liste vide :
     elle n'affiche pas de barre, et ses listes d'un build précédent sont effacées.
     Un listing peut mêler fichiers et sous-dossiers, d'où le filtre sur is_dir."""
