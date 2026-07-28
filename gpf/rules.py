@@ -417,3 +417,68 @@ def canonicalize_zones(entries: list[dict]) -> tuple[list[dict], list[str]]:
             merged["zone_label"] = iso_label.get(iso) or e["zone_label"]
             out.append(merged)
     return out, sorted(set(conflicts))
+
+
+# --------------------------------------------------------------------------- #
+# Intégrité du listing : doublons et homonymes.
+# Une page de fichiers agrège souvent PLUSIEURS sous-ressources — l'aplatissement
+# des enfants mono-unité (crawl.build_dir) fait remonter leurs fichiers dans le
+# dossier parent. Rien ne garantit alors que ces fichiers portent des noms
+# distincts, et l'API en livre qui n'en portent pas : deux quadrants d'un même
+# département dont un seul nomme son archive d'après le quadrant, une
+# sous-ressource « -ARCHIVE » qui redonne le fichier courant, une entrée
+# simplement répétée dans le flux.
+#
+# Sur le web, un homonyme n'est qu'une ligne en double. Mais un listing est
+# consommé par des outils qui ÉCRIVENT sur disque (le tableau à la souris comme
+# urls.txt) : deux lignes de même nom, ce sont deux téléchargements qui
+# s'écrasent, sans que rien ne l'ait annoncé. D'où l'invariant que ces règles
+# font tenir :
+#
+#     dans un listing, deux lignes ne retombent jamais sur le même nom de fichier.
+#
+# Trois cas, du plus indolore au plus structurant ; chacun n'attrape que ce que
+# le précédent a laissé :
+#   1. même URL              → doublon strict du flux            ┐ une seule ligne,
+#   2. même nom, même MD5    → un fichier servi à deux URL       ┘ aucune perte
+#   3. un homonyme subsiste  → on ne peut plus trancher : voir `homonyms`
+# --------------------------------------------------------------------------- #
+def dedupe_files(rows: list[dict]) -> list[dict]:
+    """Applique les règles 1 et 2 : retire les lignes qui désignent le même fichier
+    qu'une ligne déjà retenue — même `href` (doublon strict du flux Atom), ou même
+    nom local ET même empreinte (le même fichier exposé à deux URL). L'ordre
+    d'origine est conservé et la première occurrence gagne, pour que le listing
+    reste celui du flux.
+
+    Deux lignes de même nom dont l'empreinte est inconnue ne sont PAS fusionnées :
+    rien ne dit qu'il s'agit du même fichier, et fusionner ferait disparaître un
+    fichier du site. Elles ressortent en homonymes, où `homonyms` les traite.
+
+    Tolère les lignes de sous-dossier (`is_dir`, sans empreinte) d'un listing mixte :
+    leurs href étant distincts, elles traversent la règle sans être touchées.
+    Fonction pure."""
+    seen_href: set[str] = set()
+    seen_file: set[tuple[str, str]] = set()
+    out = []
+    for r in rows:
+        md5 = r.get("md5")
+        if r["href"] in seen_href or (md5 and (r["name"], md5) in seen_file):
+            continue
+        seen_href.add(r["href"])
+        if md5:
+            seen_file.add((r["name"], md5))
+        out.append(r)
+    return out
+
+
+def homonyms(rows: list[dict]) -> list[str]:
+    """Noms portés par plusieurs lignes, triés. À lire APRÈS `dedupe_files` : ce qui
+    subsiste ici n'est plus un doublon mais un conflit — deux fichiers d'empreintes
+    divergentes, ou deux fichiers dont on ne peut pas établir qu'ils sont identiques
+    (empreinte absente). Dans les deux cas un seul peut porter ce nom sur le disque
+    de l'utilisateur : le listing ne doit pas les proposer côte à côte, et c'est à
+    l'appelant de les séparer (règle 3). Fonction pure."""
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["name"]] = counts.get(r["name"], 0) + 1
+    return sorted(name for name, n in counts.items() if n > 1)

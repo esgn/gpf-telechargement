@@ -672,7 +672,14 @@ def write_stylesheet(out_dir: str) -> None:
 # le « <meta name=robots content=noindex> » posé sur chaque page (c'est lui qui garantit
 # la non-indexation). Les crawlers d'IA / d'entraînement, eux, ne désindexent rien : on
 # les bloque explicitement — respect volontaire, sans effet sur les bots impolis.
-_ROBOTS_TXT = """\
+#
+# Les deux listes d'export font EXCEPTION : ce sont des fichiers bruts, où aucune balise
+# <meta> n'est possible, et GitHub Pages ne permet pas de poser d'en-tête X-Robots-Tag
+# (ni _headers ni .htaccess ; le déploiement passe par actions/upload-pages-artifact).
+# Le levier qui couvre tout le reste du site ne les atteint donc pas, et robots.txt est
+# le seul qui reste : on les exclut par motif, pour tous les agents. Les motifs « * » et
+# « $ » sont ceux du protocole d'exclusion (RFC 9309).
+_ROBOTS_TXT = f"""\
 # Crawlers d'IA / entraînement (respect volontaire)
 User-agent: GPTBot
 User-agent: OAI-SearchBot
@@ -688,14 +695,18 @@ User-agent: Applebot-Extended
 User-agent: Meta-ExternalAgent
 Disallow: /
 
+# Tout le site est crawlable : chaque page porte son propre « noindex ». Seules les
+# listes d'export, qui ne peuvent pas en porter, sont exclues ici.
 User-agent: *
-Disallow:
+Disallow: /*{URLS_TXT}$
+Disallow: /*{MD5SUMS}$
 """
 
 
 def write_robots(out_dir: str) -> None:
     """Écrit robots.txt à la racine du site (une seule fois). Voir _ROBOTS_TXT pour la
-    stratégie : moteurs autorisés (pour qu'ils voient le noindex), bots IA bloqués."""
+    stratégie : moteurs autorisés (pour qu'ils voient le noindex), bots IA bloqués, et
+    listes d'export exclues faute de pouvoir porter un noindex."""
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, ROBOTS), "w", encoding="utf-8") as f:
         f.write(_ROBOTS_TXT)
@@ -842,25 +853,40 @@ def download_bar(rows: list[dict]) -> str:
         # Les deux listes sont NOMMÉES : « ces fichiers » se lisait comme les
         # archives du tableau juste en dessous, pas comme les deux listes.
         f"<summary>Comment utiliser {URLS_TXT} et {MD5SUMS}&nbsp;?</summary>"
-        '<div class="dl-how-body"><pre><code>'
+        # <pre> et <p> directement sous <details> : contenu de flux valide, et le JS
+        # du bouton Copier ne demande qu'un parent au <pre> (il y insère son
+        # .code-wrap). Pas de conteneur intermédiaire, il n'aurait rien à porter —
+        # details.dl-how est nu, à la différence du .cloud-body de l'encart voisin
+        # qui garnit un panneau.
+        "<pre><code>"
         f'<span class="tok-comment"># télécharger les {len(rows)} fichiers '
         "(-j 5 : le service de téléchargement est plafonné à 10 requêtes/s)</span>\n"
         f"aria2c -i {URLS_TXT} -j 5 -x 2 -c\n\n"
         '<span class="tok-comment"># vérifier les empreintes une fois terminé</span>\n'
         f"md5sum -c {MD5SUMS}"
         "</code></pre>"
+        # Les replis par OS donnent d'abord un vrai `-c`, c'est-à-dire une commande qui
+        # LIT la liste. md5 et certutil ne font que calculer l'empreinte d'un fichier :
+        # présentés à la suite de l'équivalence wget/aria2, ils se lisaient comme des
+        # équivalents de « md5sum -c », alors qu'ils n'ouvrent jamais MD5SUMS. On les
+        # garde — ils dépannent — mais nommés pour ce qu'ils sont.
         '<p class="dl-how-note">Sans aria2, '
         f"<code>wget -i {URLS_TXT} -c</code> télécharge aussi bien mais en séquentiel. "
-        "<code>md5sum</code> est un outil GNU/LINUX. Sur macOS, <code>md5 -r</code>. "
-        "Sous Windows, <code>certutil -hashfile &lt;fichier&gt; MD5</code>.</p>"
-        "</div></details>")
+        "<code>md5sum</code> est un outil GNU (coreutils)&nbsp;: sur macOS, "
+        "<code>brew install coreutils</code> puis "
+        f"<code>gmd5sum -c {MD5SUMS}</code>&nbsp;; sous Windows, "
+        f"<code>md5sum -c {MD5SUMS}</code> dans WSL. À défaut, <code>md5 -r</code> "
+        "(macOS) et <code>certutil -hashfile &lt;fichier&gt; MD5</code> (Windows) "
+        f"calculent l'empreinte d'un fichier — à comparer soi-même à {MD5SUMS}.</p>"
+        "</details>")
 
 
 def _write_or_remove(path: str, content: str) -> None:
-    """Écrit `content`, ou supprime le fichier s'il n'y a rien à écrire. Le build
-    est incrémental — il réécrit un site existant sans le purger, cf.
-    crawl.prune_subdirs — donc sans cette suppression la liste d'un build précédent
-    survivrait à un dossier vidé ou devenu page de navigation."""
+    """Écrit `content`, ou supprime le fichier s'il n'y a rien à écrire. Le build est
+    incrémental — il réécrit un site existant sans le purger, et crawl.prune_subdirs
+    ne supprime que des DOSSIERS — donc sans cette suppression la liste d'un build
+    précédent survivrait à un dossier qui cesse de lister des fichiers. C'est la
+    branche de suppression qui rend l'invariant de crawl.Ctx.write_page tenable."""
     if content:
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
@@ -874,9 +900,11 @@ def write_download_lists(fs_dir: str, rows: list[dict]) -> None:
     Écrits dès qu'il y a UN fichier, là où la ligne n'apparaît qu'à partir de deux :
     ce découplage est ce qui rend le contrat d'URL énonçable — « toute page qui
     liste des fichiers expose ses deux listes » — sans encombrer l'interface des
-    milliers de dossiers à fichier unique. Les niveaux de NAVIGATION n'en ont pas :
-    on les appelle avec une liste vide, ce qui efface aussi les listes d'un build
-    précédent."""
+    milliers de dossiers à fichier unique.
+
+    Appelée avec une liste VIDE, efface les deux fichiers : c'est sous cette forme
+    que crawl.Ctx.write_page s'en sert pour qu'aucune page n'hérite des listes d'un
+    build précédent (pages de navigation, de secours, éditoriales)."""
     os.makedirs(fs_dir, exist_ok=True)
     _write_or_remove(os.path.join(fs_dir, URLS_TXT), urls_txt(rows))
     _write_or_remove(os.path.join(fs_dir, MD5SUMS), md5sums(rows))

@@ -1,14 +1,18 @@
 """Crawl récursif d'un produit → arborescence de dossiers, chacun avec un
 index.html listant fichiers et sous-dossiers.
 
-Trois aménagements du listing brut de l'API :
+Quatre aménagements du listing brut de l'API :
   - les sidecars « .md5 » ne sont pas listés (leur checksum figure déjà en
     colonne MD5 du fichier associé) ;
   - une sous-ressource qui se réduit à UNE unité téléchargeable (fichier unique
     ou volumes d'un même .7z.NNN) est « aplatie » : ses fichiers sont listés
-    directement dans le dossier parent, sans dossier dédié ;
+    directement dans le dossier parent, sans dossier dédié — sauf si cela y ferait
+    cohabiter des fichiers homonymes (rules.homonyms) ;
   - quand les sous-ressources portent zone + format, elles sont classées en
-    zone/date/format, un niveau à valeur unique étant replié.
+    zone/date/format, un niveau à valeur unique étant replié ;
+  - un fichier proposé deux fois dans le même listing n'y figure qu'une fois
+    (rules.dedupe_files) : l'aplatissement peut réunir sous un même dossier des
+    sous-ressources qui exposent le même fichier.
 
 Le crawl ne produit aucun HTML : il assemble des `rows` et délègue le rendu à
 render.write_page / render.listing_table."""
@@ -23,8 +27,8 @@ import shutil
 from . import render
 from .api import Client, log
 from .model import is_md5_file, last_segment, resource_id, slug
-from .rules import (GROUP_LEVELS, canonicalize_zones, format_label,
-                    surviving_levels, unlabeled_zones)
+from .rules import (GROUP_LEVELS, canonicalize_zones, dedupe_files, format_label,
+                    homonyms, surviving_levels, unlabeled_zones)
 
 _VOLUME_RE = re.compile(r"^(.*)\.(\d{3,})$")  # « ….7z.001 » → base « ….7z », vol « 001 »
 _DEFAULT_HTTP_WORKERS = 8  # défaut si Ctx n'en reçoit pas (surchargeable via --workers)
@@ -63,8 +67,18 @@ class Ctx:
             raise FailFast(msg)
 
     def write_page(self, fs_dir, title, body, crumbs):
+        """Écrit l'index.html d'un dossier. Toute page en repart SANS liste d'export :
+        c'est ici que vit l'invariant, parce que TOUTE page du site passe par cette
+        méthode — listings, pages de secours (feed injoignable, dossier trop
+        volumineux), pages éditoriales, thèmes, accueil. Le build étant incrémental
+        (il réécrit un site existant sans le purger, cf. prune_subdirs, qui ne
+        supprime que des dossiers), un dossier qui cesse de lister des fichiers
+        servirait sinon les listes du build précédent, périmées, à la même URL.
+        Un listing repose les siennes juste après (cf. _emit) — d'où l'ordre :
+        la page d'abord, les listes ensuite."""
         render.write_page(fs_dir, title, body, crumbs=crumbs, footer=self.footer,
                           out_dir=self.out_dir)
+        render.write_download_lists(fs_dir, [])
         self.pages += 1
 
 
@@ -254,10 +268,14 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
     La taille d'un sous-dossier est sommée depuis son feed déjà récupéré (dir_listings) :
     exact quand une sous-ressource est un feed de fichiers (cas courant, API plate) ;
     pour une famille à structure plus profonde, la taille retombe à None → colonne
-    masquée (jamais de total faux)."""
+    masquée (jamais de total faux).
+
+    L'aplatissement des enfants mono-unité est SUSPENDU pour tout le dossier dès qu'il
+    ferait cohabiter deux fichiers homonymes (rules, règle 3) : voir le commentaire
+    au-dessus du calcul de `clashing`."""
     dir_listings = dir_listings or {}
     file_rows = [_file_row(e, fu) for e, fu in files]
-    dir_entries = []
+    flat, dir_entries = [], []
     used, kept = set(), set()
     for e in dirs:
         name = e["title"] or resource_id(e)
@@ -266,10 +284,39 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
                                   _descend(crumbs, name), depth + 1,
                                   fetched=dir_listings.get(e["href"], _NOT_FETCHED))
         if kind == "files":
-            file_rows.extend(payload)          # enfant aplati → ses fichiers remontent
+            flat.append((name, child, e, payload))   # candidat à l'aplatissement
         else:
             kept.add(child)
             dir_entries.append((name, child, e))
+
+    # Règle 3 : un enfant mono-unité n'est aplati que si le dossier d'accueil reste
+    # sans homonyme. La collision ne se voit QUE d'ici : build_dir juge chaque enfant
+    # isolément et ignore ses frères. Le verdict vaut pour tout le dossier — aplatir
+    # les uns et pas les autres présenterait le même produit de deux façons sur une
+    # seule page. Chaque enfant reprend alors le dossier que build_dir n'a pas écrit
+    # (il rend la main sans rien produire quand il aplatit), ce qui redonne aux
+    # fichiers homonymes des chemins distincts.
+    clashing = homonyms(dedupe_files(
+        file_rows + [r for *_, payload in flat for r in payload]))
+    if clashing:
+        # Sans enfant aplati, la collision oppose deux fichiers du feed courant : il
+        # n'y a aucun dossier à leur rendre, on ne peut que la signaler. Cas jamais
+        # rencontré à ce jour, mais le message ne doit pas annoncer un remède absent.
+        fix = (" → sous-ressources non aplaties" if flat
+               else " → sans remède, fichiers d'un même feed")
+        log(f"  ⚠ {crumbs[-1][0]} : {len(clashing)} nom(s) de fichier en collision "
+            f"(ex. {clashing[0]}){fix}")
+        ctx.warnings.append(f"{crumbs[-1][0]} : noms de fichiers en collision "
+                            f"(ex. {clashing[0]}){fix}")
+    for name, child, e, payload in flat:
+        if clashing:
+            _emit(ctx, os.path.join(fs_dir, child), _descend(crumbs, name),
+                  sorted(payload, key=_row_sort_key))
+            kept.add(child)
+            dir_entries.append((name, child, e))
+        else:
+            file_rows.extend(payload)          # enfant aplati → ses fichiers remontent
+
     if dir_entries and not file_rows:
         rows = [_nav_row(name, child + "/", _group_formats([e]) or None,
                          _group_bytes([e], dir_listings), date=e["updated"])
@@ -389,17 +436,28 @@ def _emit(ctx, fs_dir, crumbs, rows, *, table=render.listing_table):
     zone/date/…).
 
     Les listes d'export (urls.txt/MD5SUMS) et la ligne qui les propose ne concernent
-    que les listings de FICHIERS. Une page de navigation reçoit donc une liste vide :
-    elle n'affiche pas de barre, et ses listes d'un build précédent sont effacées.
-    Un listing peut mêler fichiers et sous-dossiers, d'où le filtre sur is_dir."""
+    que les listings de FICHIERS. Une page de navigation n'en pose donc aucune, et
+    repart de ce fait sans les listes d'un build précédent : ctx.write_page les a
+    effacées. Un listing peut mêler fichiers et sous-dossiers, d'où le filtre is_dir.
+
+    C'est ici, au point de passage unique de TOUT listing de fichiers, qu'on
+    déduplique (rules.dedupe_files) : la même règle vaut pour le tableau et pour les
+    deux listes, qui ne peuvent donc pas diverger. Un listing de navigation ne
+    contient aucun fichier — rien à dédupliquer, et ses rows n'ont pas d'empreinte."""
     is_file_listing = table is render.listing_table
+    if is_file_listing:
+        rows = dedupe_files(rows)
     files = [r for r in rows if not r["is_dir"]] if is_file_listing else []
-    render.write_download_lists(fs_dir, files)
     body = ""
     if len(crumbs) > 1:
         body += '<a class="up" href="../">↑ Dossier parent</a>'
     body += render.download_bar(files) + table(rows)
     ctx.write_page(fs_dir, crumbs[-1][0], body, render.breadcrumb(crumbs))
+    # APRÈS la page : write_page efface les listes par défaut, c'est ce qui garantit
+    # qu'aucune ne survit à un dossier qui cesse de lister des fichiers. Les reposer
+    # avant serait les écraser aussitôt.
+    if files:
+        render.write_download_lists(fs_dir, files)
 
 
 def prune_subdirs(fs_dir: str, keep) -> None:

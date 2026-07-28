@@ -11,9 +11,10 @@ from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
                            strip_json_comments)
 from gpf.crawl import (Ctx, FailFast, _emit, _fetch_dirs, _group_bytes,
-                       _group_formats, _is_single_unit, _row_sort_key)
-from gpf.rules import (GROUP_LEVELS, canonicalize_zones, surviving_levels,
-                       zone_label, zone_sort_key)
+                       _group_formats, _is_single_unit, _row_sort_key, _write_dir,
+                       build_dir)
+from gpf.rules import (GROUP_LEVELS, canonicalize_zones, dedupe_files, homonyms,
+                       surviving_levels, zone_label, zone_sort_key)
 from gpf.model import (fmt_date, fmt_datetime, human_size, is_md5, is_md5_file,
                        last_segment, resource_id, slug)
 
@@ -508,6 +509,204 @@ class TestCrawlHelpers(unittest.TestCase):
         self.assertEqual(zone_label({"zone": "D999", "zone_label": "D999"}), "D999")
 
 
+class TestListingIntegrity(unittest.TestCase):
+    """Règles 1 et 2 : dans un listing, deux lignes ne retombent jamais sur le même
+    nom de fichier. Les trois profils viennent de cas RÉELS du service (cf. les
+    dossiers cités), l'aplatissement réunissant sous un même dossier des
+    sous-ressources qui exposent le même fichier — ou des fichiers homonymes."""
+
+    _A = "d41d8cd98f00b204e9800998ecf8427e"
+    _B = "0cc175b9c0f1b6a831c399e269772661"
+
+    @staticmethod
+    def _row(name, md5, href=None, size=1024):
+        return {"name": name, "href": href or f"https://d/{name}", "is_dir": False,
+                "date": "2026-06-15", "size": size, "md5": md5}
+
+    # ---- règle 1 : même URL ------------------------------------------------- #
+    def test_dedupe_drops_strictly_repeated_url(self):
+        # Profil OCSGE/D030 et BDORTHO/D008/GRAPHE : la MÊME entrée revient deux
+        # fois dans le flux Atom. Doublon pur, aucune information perdue.
+        rows = [self._row("a.7z", self._A), self._row("a.7z", self._A)]
+        self.assertEqual([r["href"] for r in dedupe_files(rows)], ["https://d/a.7z"])
+
+    def test_dedupe_drops_repeated_url_even_without_md5(self):
+        # Même URL = même fichier : l'empreinte n'a pas besoin d'être connue.
+        rows = [self._row("a.7z", None), self._row("a.7z", None)]
+        self.assertEqual(len(dedupe_files(rows)), 1)
+
+    # ---- règle 2 : même nom, même empreinte --------------------------------- #
+    def test_dedupe_drops_same_name_same_hash_at_two_urls(self):
+        # Profil PARCS.JARDINS/D074 : la sous-ressource « -ARCHIVE_D074 » redonne le
+        # fichier courant. Deux URL, un seul fichier — on n'en propose qu'un.
+        rows = [self._row("p.7z", self._A, "https://d/PJ-ARCHIVE_D074/p.7z"),
+                self._row("p.7z", self._A, "https://d/PJ_D074_2023-01-01/p.7z")]
+        kept = dedupe_files(rows)
+        self.assertEqual(len(kept), 1)
+        # la première occurrence gagne : le listing reste celui du flux
+        self.assertEqual(kept[0]["href"], "https://d/PJ-ARCHIVE_D074/p.7z")
+
+    def test_dedupe_keeps_same_name_with_diverging_hashes(self):
+        # Profil RGEALTI/D973 : deux fichiers DIFFÉRENTS sous le même nom. Fusionner
+        # en ferait disparaître un du site — c'est le cas que la règle 3 traitera.
+        rows = [self._row("v.7z.001", self._A, "https://d/D973_NE/v.7z.001"),
+                self._row("v.7z.001", self._B, "https://d/D973_SE/v.7z.001")]
+        self.assertEqual(len(dedupe_files(rows)), 2)
+
+    def test_dedupe_keeps_same_name_when_hash_unknown(self):
+        # Sans empreinte, rien ne dit que c'est le même fichier : on ne fusionne pas.
+        rows = [self._row("v.7z", None, "https://d/x/v.7z"),
+                self._row("v.7z", None, "https://d/y/v.7z")]
+        self.assertEqual(len(dedupe_files(rows)), 2)
+
+    def test_dedupe_keeps_distinct_files_and_preserves_order(self):
+        rows = [self._row("b.7z", self._B), self._row("a.7z", self._A)]
+        self.assertEqual([r["name"] for r in dedupe_files(rows)], ["b.7z", "a.7z"])
+
+    def test_dedupe_leaves_subdir_rows_untouched(self):
+        # Un listing peut mêler fichiers et sous-dossiers : les rows de dossier
+        # n'ont pas d'empreinte et doivent traverser la règle sans dommage.
+        rows = [{"name": "sub", "href": "sub/", "is_dir": True, "date": "",
+                 "size": None, "md5": None},
+                self._row("a.7z", self._A)]
+        self.assertEqual([r["name"] for r in dedupe_files(rows)], ["sub", "a.7z"])
+
+    # ---- lecture des homonymes restants ------------------------------------- #
+    def test_homonyms_reports_only_unresolved_names(self):
+        rows = dedupe_files([self._row("v.7z", self._A, "https://d/x/v.7z"),
+                             self._row("v.7z", self._B, "https://d/y/v.7z"),
+                             self._row("seul.7z", self._A)])
+        self.assertEqual(homonyms(rows), ["v.7z"])
+
+    def test_homonyms_empty_after_dedupe_resolves_everything(self):
+        rows = dedupe_files([self._row("p.7z", self._A, "https://d/x/p.7z"),
+                             self._row("p.7z", self._A, "https://d/y/p.7z")])
+        self.assertEqual(homonyms(rows), [])
+
+    # ---- branchement dans le crawl ------------------------------------------ #
+    def test_emit_dedupes_table_and_export_lists_together(self):
+        # La règle est appliquée au point de passage unique (_emit) : le tableau et
+        # les deux listes voient exactement le même lot, ils ne peuvent pas diverger.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            ctx = Ctx(_FakeClient({}), d, "<footer>f</footer>")
+            _emit(ctx, d, [("Accueil", 1), ("Dossier", 0)],
+                  [self._row("p.7z", self._A, "https://d/x/p.7z"),
+                   self._row("p.7z", self._A, "https://d/y/p.7z")])
+            with open(os.path.join(d, "index.html"), encoding="utf-8") as f:
+                html = f.read()
+            with open(os.path.join(d, "urls.txt"), encoding="utf-8") as f:
+                urls = f.read().splitlines()
+        self.assertEqual(urls, ["https://d/x/p.7z"])
+        self.assertEqual(html.count("https://d/x/p.7z"), 1)
+        self.assertNotIn("https://d/y/p.7z", html)
+        # une seule ligne restante : la barre d'export disparaît (seuil de deux)
+        self.assertNotIn("dl-bar", html)
+
+    # ---- règle 3 : l'aplatissement est suspendu sur homonyme ---------------- #
+    @staticmethod
+    def _sub(name, files):
+        """Sous-ressource mono-unité : son entrée « dossier » et son feed de fichiers
+        (volumes d'un même .7z, ce qui la rend aplatissable par _is_single_unit)."""
+        href = f"https://d/{name}"
+        common = {"fmt": "ASC", "fmt_label": "ASC", "fmt_all": ["ASC"],
+                  "zone": "D973", "zone_label": "Guyane",
+                  "editionDate": "2023-01-01", "updated": "2026-01-01"}
+        entries = [{"title": t, "id": f"{href}/{t}", "href": f"{href}/{t}",
+                    "is_dir": False, "length": 1024, "md5": md5, **common}
+                   for t, md5 in files]
+        return ({"title": name, "id": href, "href": href, "is_dir": True,
+                 "length": None, "md5": None, **common},
+                (len(entries), "2026-01-01", entries, True))
+
+    def _write(self, out_dir, subs):
+        """Écrit `out_dir` depuis des sous-ressources [(nom, [(fichier, md5)])].
+        depth=1 → les enfants sont crawlés à depth 2, seuil de l'aplatissement."""
+        dirs, feeds = [], {}
+        for name, files in subs:
+            entry, feed = self._sub(name, files)
+            dirs.append(entry)
+            feeds[entry["href"]] = feed
+        ctx = Ctx(_FakeClient(feeds), out_dir, "<footer>f</footer>")
+        _write_dir(ctx, out_dir, [("Accueil", 1), ("D973", 0)], dirs, [], 1)
+        return ctx
+
+    def test_flattening_suspended_when_it_would_create_homonyms(self):
+        # Forme réelle de RGEALTI/D973/2023-01-01 : deux quadrants dont les archives
+        # portent le MÊME nom (le producteur n'a mis le quadrant que dans l'id de la
+        # sous-ressource). Aplatis, les deux .001 se marcheraient dessus.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            ctx = self._write(d, [
+                ("RGEALTI_D973_NE_2023-01-01", [("v.7z.001", self._A),
+                                                ("v.7z.002", self._A)]),
+                ("RGEALTI_D973_SE_2023-01-01", [("v.7z.001", self._B),
+                                                ("v.7z.002", self._B)]),
+            ])
+            with open(os.path.join(d, "index.html"), encoding="utf-8") as f:
+                parent = f.read()
+            # chaque sous-ressource a repris son dossier, avec ses propres listes
+            for q in ("NE", "SE"):
+                sub = os.path.join(d, f"RGEALTI_D973_{q}_2023-01-01")
+                self.assertTrue(os.path.isdir(sub), f"dossier {q} attendu")
+                with open(os.path.join(sub, "urls.txt"), encoding="utf-8") as f:
+                    urls = f.read().splitlines()
+                self.assertEqual(
+                    urls, [f"https://d/RGEALTI_D973_{q}_2023-01-01/v.7z.00{n}"
+                           for n in (1, 2)])
+            # le parent ne liste plus aucun fichier : il est devenu une page de
+            # navigation, donc sans liste d'export ni ligne « Télécharger en lot »
+            self.assertIn("RGEALTI_D973_NE_2023-01-01/", parent)
+            self.assertIn("RGEALTI_D973_SE_2023-01-01/", parent)
+            self.assertNotIn("v.7z.001", parent)
+            self.assertNotIn("dl-bar", parent)
+            self.assertFalse(os.path.exists(os.path.join(d, "urls.txt")))
+        # l'anomalie est amont : elle doit remonter, pas seulement être contournée
+        self.assertEqual(len(ctx.warnings), 1)
+        self.assertIn("collision", ctx.warnings[0])
+        self.assertIn("v.7z.001", ctx.warnings[0])
+
+    def test_flattening_kept_when_names_are_distinct(self):
+        # Garde-fou : sans homonyme, l'aplatissement reste la règle — c'est le cas
+        # de l'immense majorité des dossiers, il ne doit pas régresser.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            ctx = self._write(d, [
+                ("RGEALTI_D973_NO_2023-01-01", [("no.7z.001", self._A),
+                                                ("no.7z.002", self._A)]),
+                ("RGEALTI_D973_SO_2023-01-01", [("so.7z.001", self._B),
+                                                ("so.7z.002", self._B)]),
+            ])
+            with open(os.path.join(d, "index.html"), encoding="utf-8") as f:
+                parent = f.read()
+            with open(os.path.join(d, "urls.txt"), encoding="utf-8") as f:
+                urls = f.read().splitlines()
+            self.assertFalse(os.path.isdir(os.path.join(d, "RGEALTI_D973_NO_2023-01-01")))
+        self.assertEqual(len(urls), 4)          # les 4 volumes remontent dans le parent
+        self.assertIn("no.7z.001", parent)
+        self.assertIn("so.7z.001", parent)
+        self.assertIn("dl-bar", parent)         # 4 fichiers → la barre s'affiche
+        self.assertEqual(ctx.warnings, [])
+
+    def test_flattening_verdict_covers_the_whole_directory(self):
+        # Le verdict est global : on n'aplatit pas les frères sains en laissant les
+        # autres en dossiers, sans quoi la page présenterait le même produit de deux
+        # façons. Ici NO est sain, mais NE/SE collisionnent : les trois descendent.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self._write(d, [
+                ("SR_NE", [("v.7z.001", self._A)]),
+                ("SR_SE", [("v.7z.001", self._B)]),
+                ("SR_NO", [("no.7z.001", self._A)]),
+            ])
+            for name in ("SR_NE", "SR_SE", "SR_NO"):
+                self.assertTrue(os.path.isdir(os.path.join(d, name)), name)
+
+
 class TestCatalogue(unittest.TestCase):
     def test_strip_comments_and_trailing_commas(self):
         raw = """{
@@ -976,6 +1175,30 @@ class TestRender(unittest.TestCase):
         self.assertIn('href="https://github.com/u/r"', f)
         self.assertNotIn("repo-link", render.render_footer("x.", "g"))
 
+    def test_robots_excludes_export_lists_without_blocking_the_site(self):
+        # Stratégie du site : tout est crawlable, chaque PAGE porte son « noindex ».
+        # Les deux listes d'export sont des fichiers bruts, sans <meta> possible et
+        # sans en-tête posable sur GitHub Pages : robots.txt est leur seul levier.
+        # (On n'utilise pas urllib.robotparser pour l'affirmer : la stdlib fait du
+        # préfixe littéral et ignore « * » / « $ », normalisés par la RFC 9309.)
+        groups = render._ROBOTS_TXT.split("User-agent: *")
+        self.assertEqual(len(groups), 2, "un seul groupe générique attendu")
+        generic = groups[1]
+        self.assertIn(f"Disallow: /*{render.URLS_TXT}$", generic)
+        self.assertIn(f"Disallow: /*{render.MD5SUMS}$", generic)
+        # le groupe générique ne doit pas bloquer le site : sans crawl, pas de noindex lu
+        self.assertNotIn("Disallow: /\n", generic)
+        # les bots IA, eux, restent bloqués partout
+        self.assertIn("Disallow: /\n", groups[0])
+
+    def test_write_robots_writes_the_file_at_the_root(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            render.write_robots(d)
+            with open(os.path.join(d, render.ROBOTS), encoding="utf-8") as f:
+                self.assertEqual(f.read(), render._ROBOTS_TXT)
+
 
 class TestDownloadLists(unittest.TestCase):
     """Export de la liste des fichiers : contenu des deux listes, seuil d'affichage
@@ -1051,6 +1274,19 @@ class TestDownloadLists(unittest.TestCase):
         self.assertIn("<pre><code>", html)
         self.assertIn("md5sum -c MD5SUMS", html)
 
+    def test_download_bar_note_offers_a_real_verification_on_every_os(self):
+        # `md5 -r` (macOS) et `certutil -hashfile` (Windows) CALCULENT une empreinte,
+        # ils ne lisent pas MD5SUMS : ils ne peuvent pas tenir lieu d'équivalent de
+        # « md5sum -c ». La note doit donner d'abord un vrai « -c » sur les deux OS,
+        # et ne présenter les calculateurs qu'ensuite, nommés pour ce qu'ils font.
+        html = render.download_bar([self._file("a.7z", self._A),
+                                    self._file("b.7z", self._B)])
+        note = html.split('class="dl-how-note"')[1]
+        self.assertIn("gmd5sum -c MD5SUMS", note)        # macOS, via coreutils
+        self.assertIn("WSL", note)                       # Windows
+        self.assertLess(note.index("gmd5sum"), note.index("md5 -r"))
+        self.assertIn("calculent l'empreinte", note)
+
     # ---- écriture sur disque ---------------------------------------------- #
     def test_write_download_lists_writes_both_files(self):
         import os
@@ -1083,6 +1319,66 @@ class TestDownloadLists(unittest.TestCase):
             render.write_download_lists(d, [])
             self.assertFalse(os.path.exists(os.path.join(d, "urls.txt")))
             self.assertFalse(os.path.exists(os.path.join(d, "MD5SUMS")))
+
+    # ---- l'invariant : aucune page n'hérite des listes du build précédent --- #
+    _FEED = "https://d/SR"
+
+    def _feed_of(self, *md5s):
+        """Feed d'une sous-ressource : les volumes d'un même .7z (4-uplet all_entries)."""
+        common = {"fmt": "GPKG", "fmt_label": "GPKG", "fmt_all": ["GPKG"],
+                  "zone": "D01", "zone_label": "Ain", "editionDate": "2023-01-01",
+                  "updated": "2026-01-01"}
+        entries = [{"title": f"v.7z.00{i}", "id": f"{self._FEED}/v.7z.00{i}",
+                    "href": f"{self._FEED}/v.7z.00{i}", "is_dir": False,
+                    "length": 1024, "md5": m, **common}
+                   for i, m in enumerate(md5s, 1)]
+        return (len(entries), "2026-01-01", entries, True)
+
+    def _rebuild(self, out_dir, feeds, **ctx_kw):
+        """Rejoue build_dir sur out_dir, comme le ferait un build incrémental."""
+        ctx = Ctx(_FakeClient(feeds), out_dir, "<footer>f</footer>", **ctx_kw)
+        build_dir(ctx, self._FEED, out_dir, [("Accueil", 1), ("SR", 0)], 1)
+        return ctx
+
+    def _assert_no_lists(self, d):
+        import os
+        for name in (render.URLS_TXT, render.MD5SUMS):
+            self.assertFalse(os.path.exists(os.path.join(d, name)),
+                             f"{name} du build précédent a survécu")
+
+    def test_unavailable_page_drops_the_previous_lists(self):
+        # Sortie anticipée « feed inaccessible » : elle écrit sa page de secours sans
+        # passer par _emit. Sans l'invariant porté par Ctx.write_page, urls.txt
+        # continuerait de servir la liste d'avant sous une page « indisponible ».
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self._rebuild(d, {self._FEED: self._feed_of(self._A, self._B)})
+            self.assertTrue(os.path.exists(os.path.join(d, render.URLS_TXT)))
+            ctx = self._rebuild(d, {})               # le feed ne répond plus
+            self._assert_no_lists(d)
+            self.assertEqual(len(ctx.errors), 1)     # et l'échec reste fatal
+
+    def test_oversized_page_drops_the_previous_lists(self):
+        # Même chose sur le garde-fou volumétrie, qui pense déjà au nettoyage avec
+        # prune_subdirs — lequel ne supprime que des DOSSIERS, pas ces deux fichiers.
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            feeds = {self._FEED: self._feed_of(self._A, self._B)}
+            self._rebuild(d, feeds)
+            self._rebuild(d, feeds, max_entries=1)   # le feed a dépassé le seuil
+            self._assert_no_lists(d)
+
+    def test_listing_still_writes_its_lists_after_the_page(self):
+        # Non-régression de l'ordre : write_page efface, _emit repose ensuite. Inversé,
+        # le listing nominal perdrait ses listes — c'est tout le site qui casserait.
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            self._rebuild(d, {self._FEED: self._feed_of(self._A, self._B)})
+            with open(os.path.join(d, render.URLS_TXT), encoding="utf-8") as f:
+                self.assertEqual(f.read().splitlines(),
+                                 [f"{self._FEED}/v.7z.001", f"{self._FEED}/v.7z.002"])
 
     # ---- branchement dans le crawl ---------------------------------------- #
     def _emit_in_tmp(self, rows, **kw):
