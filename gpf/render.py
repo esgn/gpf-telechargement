@@ -194,8 +194,9 @@ a.card .retired-flag { display:inline-block; font-size:.7rem; font-weight:600;
                        border-radius:5px; padding:.05rem .35rem; margin-bottom:.35rem;
                        align-self:flex-start; }
 
-/* Fiche produit : liens de spécification */
-ul.specs { list-style:none; margin:.5rem 0; padding:0; }
+/* Fiche produit : liens de spécification. Taille alignée sur table.listing (.94rem) :
+   registre « utilitaire », un cran sous le texte courant mais au-dessus de p.meta. */
+ul.specs { list-style:none; margin:.5rem 0; padding:0; font-size:.94rem; }
 ul.specs li { margin:.3rem 0; }
 /* L'emoji est posé dans le HTML (par type de doc, cf. _spec_icon), pas en ::before,
    pour pouvoir varier d'une ligne à l'autre. */
