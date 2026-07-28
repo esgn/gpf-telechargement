@@ -6,6 +6,8 @@ des pages éditoriales de produit. Couvre :
   - séparateur     ---                      → <hr>
   - listes         lignes « - » / « * »     → <ul><li>
   - paragraphes    blocs de texte           → <p>
+  - retour forcé   deux espaces en fin de
+                   ligne d'un paragraphe    → <br>
   - inline         **gras**, *italique*,
                    `code`, [texte](url)     → <strong>/<em>/<code>/<a>
   - bloc de code   ```…``` (clôturé)         → <pre><code> (rendu verbatim)
@@ -66,6 +68,13 @@ def _inline(text: str) -> str:
 _CODE_COMMENT = re.compile(r"^\s*(#|--)")
 
 
+# Retour à la ligne forcé : deux espaces (ou plus) en fin de ligne dans un paragraphe,
+# convention Markdown. Le marqueur est posé APRÈS html.escape, donc un « <br> » écrit
+# dans la source (escapé en &lt;br&gt;) ne peut pas être confondu avec lui.
+_BR = "<br>"
+_HARD_BREAK = "  "
+
+
 def _highlight_code(lines: list[str]) -> str:
     """Assemble les lignes (déjà échappées) d'un bloc de code, en enveloppant les lignes
     de COMMENTAIRE dans <span class="tok-comment"> (colorées par le CSS). Le reste est
@@ -94,7 +103,10 @@ def to_html(md: str) -> str:
 
     def flush_para():
         if para:
-            out.append(f"<p>{_inline(' '.join(para))}</p>")
+            # Lignes recollées par une espace, sauf après un retour forcé où le <br>
+            # sépare déjà ; celui de la dernière ligne n'a pas d'objet, on le retire.
+            text = "".join(ln if ln.endswith(_BR) else ln + " " for ln in para)
+            out.append(f"<p>{_inline(text.rstrip().removesuffix(_BR))}</p>")
             para.clear()
 
     def flush_list():
@@ -151,7 +163,8 @@ def to_html(md: str) -> str:
 
         # sinon : ligne de paragraphe (une liste en cours est close)
         flush_list()
-        para.append(stripped)
+        # `line` a perdu les espaces de fin : le retour forcé se lit sur `raw`.
+        para.append(stripped + (_BR if raw.endswith(_HARD_BREAK) else ""))
 
     if in_code:      # bloc de code non refermé en fin de source : on le clôt proprement
         out.append(_emit_code(code_lines))

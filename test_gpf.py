@@ -997,6 +997,26 @@ class TestMarkdown(unittest.TestCase):
         self.assertEqual(to_html("voir `x*y*z` et **g**"),
                          "<p>voir <code>x*y*z</code> et <strong>g</strong></p>")
 
+    def test_hard_break(self):
+        # deux espaces en fin de ligne → <br> ; sans eux, les lignes sont recollées
+        self.assertEqual(to_html("a  \nb"), "<p>a<br>b</p>")
+        self.assertEqual(to_html("a\nb"), "<p>a b</p>")
+        # plus de deux espaces marchent aussi ; une seule ne suffit pas
+        self.assertEqual(to_html("a   \nb"), "<p>a<br>b</p>")
+        self.assertEqual(to_html("a \nb"), "<p>a b</p>")
+        # le retour forcé de la DERNIÈRE ligne d'un paragraphe est sans objet
+        self.assertEqual(to_html("a  \nb  \n\nc"), "<p>a<br>b</p>\n<p>c</p>")
+        # le balisage inline s'applique de part et d'autre du retour
+        self.assertEqual(to_html("**g**  \n*i*"), "<p><strong>g</strong><br><em>i</em></p>")
+        # un « <br> » écrit dans la source reste du texte échappé
+        self.assertEqual(to_html("a<br>b"), "<p>a&lt;br&gt;b</p>")
+
+    def test_hard_break_only_in_paragraphs(self):
+        # hors paragraphe (titre, item de liste), les espaces de fin sont ignorés :
+        # un <br> en fin de <li> ou de <h2> n'ajouterait qu'une ligne vide
+        self.assertEqual(to_html("- a  \n- b  "), "<ul><li>a</li><li>b</li></ul>")
+        self.assertEqual(to_html("## T  "), "<h2>T</h2>")
+
     def test_list(self):
         self.assertEqual(to_html("- a\n- b"), "<ul><li>a</li><li>b</li></ul>")
 
