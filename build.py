@@ -175,11 +175,16 @@ def _filtered_out(only: str | None, only_theme: str | None,
 
 
 def _warn_uncurated_formats(ctx: Ctx, resources: list[dict]) -> None:
-    """Garde-fou : signale tout code de format exposé par le service mais absent de
-    rules.FORMAT_LABELS (il s'afficherait alors avec le libellé brut de l'API). La
-    liste des formats vient du capabilities (`fmt_all` de chaque ressource) — la
-    source de vérité — donc la vérification est complète même sous --only. Non
-    bloquant : rappel de compléter le mapping quand un nouveau format apparaît."""
+    """Garde-fou : signale tout code de format exposé par le service de téléchargement
+    mais absent de rules.FORMAT_LABELS (il s'afficherait alors avec le libellé brut de
+    l'API). La liste des formats vient du capabilities (`fmt_all` de chaque ressource)
+    — la source de vérité — donc la vérification est complète même sous --only. Non
+    bloquant : rappel de compléter le mapping quand un nouveau format apparaît.
+
+    Le service chunk n'est délibérément PAS contrôlé : il expose une dizaine de codes
+    hors mapping (EPT, VPC, COPC, LAZ, PMTiles…) que l'encart écarte de toute façon
+    avant affichage (cloud.CLOUD_FORMAT_LABELS). Les signaler ne produirait que du
+    bruit, à chaque build."""
     codes = {c for r in resources for c in r["fmt_all"]}
     for code in sorted(uncurated_formats(codes)):
         ctx.warn(f"format « {code} » exposé par le service mais sans libellé curé "
@@ -229,7 +234,7 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product) -> str:
     seulement pour un produit à accès direct effectivement construit."""
     layers = cloud.fetch_product_layers(ctx.client, resource_entry,
                                         prefer_edition=product.cloud_edition)
-    if not layers:
+    if layers is None:
         rid = resource_id(resource_entry)
         ctx.warn(f"« {product.id} » : ressource cloud-native « {rid} » sans couche "
                  "exploitable au build — encart omis.")
@@ -494,7 +499,7 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
                      "introuvable ou sans format exploitable — ignoré.")
             continue
         prod_dir = os.path.join(out_dir, slug(cat.resolve_theme(product)), product.id)
-        if _patch_cloud(ctx, product, entry, prod_dir, site):
+        if _patch_cloud(ctx, product, entry, prod_dir):
             patched += 1
             log(f"~ {product.title or product.id} : encart cloud-native régénéré")
 
