@@ -180,19 +180,21 @@ def _warn_uncurated_formats(ctx: Ctx, resources: list[dict]) -> None:
     liste des formats vient du capabilities (`fmt_all` de chaque ressource) — la
     source de vérité — donc la vérification est complète même sous --only. Non
     bloquant : rappel de compléter le mapping quand un nouveau format apparaît."""
-    codes = {c for r in resources for c in r.get("fmt_all", ())}
+    codes = {c for r in resources for c in r["fmt_all"]}
     for code in sorted(uncurated_formats(codes)):
         ctx.warn(f"format « {code} » exposé par le service mais sans libellé curé "
-                 f"(repli sur l'API) — à ajouter dans rules.FORMAT_LABELS.",
-                 f"format « {code} » sans libellé curé (rules.FORMAT_LABELS)")
+                 "(repli sur l'API) — à ajouter dans rules.FORMAT_LABELS.")
 
 
-def _fetch_chunk_live(ctx: Ctx, cat: Catalogue) -> dict:
+def _fetch_chunk_live(ctx: Ctx, cat: Catalogue) -> dict | None:
     """Ressources du service cloud-native (chunk), indexées par id, pour résoudre les
-    « cloud_native » déclarés (badges des cartes et encarts d'accès direct). Renvoie {}
-    si aucun produit inclus ne déclare d'accès direct (aucune requête) ou si le service
-    est inaccessible : service SECONDAIRE, on n'échoue alors PAS le build (le site de
-    téléchargement classique reste complet), on se contente d'un avertissement."""
+    « cloud_native » déclarés (badges des cartes et encarts d'accès direct).
+
+    Deux absences distinctes, deux valeurs : {} = aucun produit inclus ne déclare
+    d'accès direct, donc aucune requête émise ; None = service injoignable — même
+    convention que fetch_capabilities, dont ce None vient. Service SECONDAIRE : son
+    échec n'est PAS fatal (le site de téléchargement classique reste complet), un
+    avertissement suffit."""
     if not any(p.cloud_native for p in cat.included()):
         return {}
     resources = fetch_capabilities(ctx.client, _service(cat, "chunk"),
@@ -202,7 +204,7 @@ def _fetch_chunk_live(ctx: Ctx, cat: Catalogue) -> dict:
         # n'ajoute donc que l'entrée de synthèse, sans redoubler la ligne de journal.
         ctx.warnings.append("service cloud-native (chunk) inaccessible "
                             "— badges et encarts d'accès direct omis")
-        return {}
+        return None
     return {resource_id(e): e for e in resources}
 
 
@@ -225,37 +227,32 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product) -> str:
     ressource n'expose finalement aucune couche exploitable (ex. feuilles inaccessibles
     au build, malgré un format annoncé au capabilities) — signalé, non bloquant. Appelé
     seulement pour un produit à accès direct effectivement construit."""
-    layers = cloud.fetch_product_layers(ctx.client, resource_entry, product.cloud_edition)
+    layers = cloud.fetch_product_layers(ctx.client, resource_entry,
+                                        prefer_edition=product.cloud_edition)
     if not layers:
         rid = resource_id(resource_entry)
         ctx.warn(f"« {product.id} » : ressource cloud-native « {rid} » sans couche "
-                 "exploitable au build — encart omis.",
-                 f"{product.id} : cloud-native sans couche exploitable ({rid})")
+                 "exploitable au build — encart omis.")
         return ""
     # Format(s) annoncé(s) au capabilities mais dont la feuille était injoignable au build :
     # l'encart se rend avec les formats survivants, mais on ne retire pas un format en
     # silence (cohérent avec le signalement au niveau ressource ci-dessus).
-    if layers.get("degraded"):
+    if layers["degraded"]:
         fmts = ", ".join(layers["degraded"])
         ctx.warn(f"« {product.id} » : format(s) cloud-native injoignable(s) au build "
-                 f"({fmts}) — retiré(s) de l'encart.",
-                 f"{product.id} : format(s) cloud injoignable(s) au build ({fmts})")
-    # Édition épinglée demandée mais absente de tous les formats → repli sur la dernière,
+                 f"({fmts}) — retiré(s) de l'encart.")
+    # Édition épinglée demandée mais absente de tous les formats => repli sur la dernière,
     # signalé (sinon l'épingle serait silencieusement ignorée : footgun).
-    if product.cloud_edition and all(
-            f["edition"] != product.cloud_edition for f in layers["formats"]):
-        ctx.warn(f"« {product.id} » : édition cloud épinglée « {product.cloud_edition} » "
-                 "introuvable — repli sur la plus récente.",
-                 f"{product.id} : cloud_edition « {product.cloud_edition} » "
-                 "introuvable (repli dernière édition)")
+    if product.cloud_edition and product.cloud_edition not in {
+            f["edition"] for f in layers["formats"]}:
+        ctx.warn(f"« {product.id} » : cloud_edition « {product.cloud_edition} » "
+                 "introuvable — repli sur l'édition la plus récente.")
     tuto_intro, tuto_tabs = _cloud_tuto(product.id)
     # Le CSS ne sait afficher que render.MAX_CLOUD_TABS onglets : au-delà, _cloud_tabs
     # tronque — on le signale pour que l'auteur du tuto réduise ses sections « ## ».
     if len(tuto_tabs) > render.MAX_CLOUD_TABS:
         ctx.warn(f"« {product.id} » : tuto à {len(tuto_tabs)} sections pour "
-                 f"{render.MAX_CLOUD_TABS} onglets affichables — sections en trop tronquées.",
-                 f"{product.id} : tuto à {len(tuto_tabs)} sections, "
-                 f"tronqué à {render.MAX_CLOUD_TABS} onglets")
+                 f"{render.MAX_CLOUD_TABS} onglets affichables — sections en trop tronquées.")
     return render.cloud_block(layers, tuto_intro=tuto_intro, tuto_tabs=tuto_tabs)
 
 
@@ -290,10 +287,11 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     _warn_catalogue_keys(cat, ctx)
     _warn_uncurated_formats(ctx, resources)
     # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.
-    # {} si aucun produit ne le déclare ou si le service est indisponible (non bloquant).
-    chunk_live = _fetch_chunk_live(ctx, cat)
+    # Le build n'a pas à distinguer « non déclaré » de « injoignable » (les deux mènent à
+    # un site sans accès direct, non bloquant) : « or {} » les ramène au même vide.
+    chunk_live = _fetch_chunk_live(ctx, cat) or {}
 
-    sections: dict[str, list[dict]] = {}   # theme_id → [{id, title, summary}, …]
+    sections: dict[str, list[dict]] = {}   # theme_id => [{id, title, summary}, …]
     keep_themes: set[str] = set()
     built = 0
     aborted = False                        # coupé par --fail-fast (rendu global sauté)
@@ -310,8 +308,8 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
                 # catalogue le déclare inclus : à voir dans la synthèse, pas seulement
                 # dans un journal de plusieurs heures. Non fatal (l'API retire
                 # légitimement des ressources ; --check en fait le rapport détaillé).
-                ctx.warn(f"« {product.id} » inclus mais absent de l'API — ignoré.",
-                         f"{product.id} : inclus au catalogue mais absent de l'API")
+                ctx.warn(f"« {product.id} » inclus au catalogue mais absent de "
+                         "l'API — ignoré.")
                 continue
 
         # 2. Enregistrer la carte pour la navigation — TOUJOURS, même si --only saute
@@ -354,7 +352,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
                 # de l'arbre). Vide sinon.
                 cloud_html = _cloud_block(ctx, cloud_entry, product) if has_cloud else ""
                 # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
-                # build) alors que le capabilities annonçait un format : encart vide → on
+                # build) alors que le capabilities annonçait un format : encart vide => on
                 # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
                 # fiche dépourvue d'accès direct.
                 if has_cloud and not cloud_html:
@@ -419,7 +417,7 @@ def _build_product(ctx: Ctx, product, entry, prod_dir, title, theme_label,
     groupement, garde-fou volumétrie). L'encart cloud-native s'insère ENTRE l'en-tête
     et l'arbre : visible dès l'ouverture, même sur une fiche à l'arbre très long."""
     build_dir(ctx, entry["href"], prod_dir, _product_crumbs(theme_label, title), depth=1)
-    # Encart encadré de marqueurs → régénérable seul via --cloud-only (sans re-crawl).
+    # Encart encadré de marqueurs => régénérable seul via --cloud-only (sans re-crawl).
     cloud_section = f"{_CLOUD_START}{cloud_html}{_CLOUD_END}" if cloud_html else ""
     header = render.product_header(product) + cloud_section + "<hr>"
     _prepend_body(os.path.join(prod_dir, "index.html"), header)
@@ -481,14 +479,10 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
 
     chunk_live = _fetch_chunk_live(ctx, cat)
     render.write_stylesheet(out_dir)          # applique aussi d'éventuels ajustements CSS
-    if not chunk_live:
-        # _fetch_chunk_live renvoie {} dans DEUX cas distincts : aucun produit à accès
-        # direct déclaré (rien à faire, aucune requête émise) OU service réellement
-        # injoignable. On les sépare via `targets` pour ne pas annoncer « indisponible »
-        # alors que le service n'a même pas été contacté.
-        if targets:
-            log("Service cloud-native indisponible — aucun encart régénéré.")
-            return 1
+    if chunk_live is None:
+        log("Service cloud-native indisponible — aucun encart régénéré.")
+        return 1
+    if not targets:
         log("Aucun produit à accès direct dans le catalogue — rien à régénérer.")
         return 0
 
@@ -496,10 +490,8 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
     for product in targets:
         entry = chunk_live.get(product.cloud_native)
         if not entry or not cloud.has_surfaced_format(entry):
-            ctx.warn(f"« {product.id} » : « {product.cloud_native} » sans accès direct "
-                     "exploitable — ignoré.",
-                     f"{product.id} : cloud_native introuvable/sans format "
-                     f"({product.cloud_native})")
+            ctx.warn(f"« {product.id} » : cloud_native « {product.cloud_native} » "
+                     "introuvable ou sans format exploitable — ignoré.")
             continue
         prod_dir = os.path.join(out_dir, slug(cat.resolve_theme(product)), product.id)
         if _patch_cloud(ctx, product, entry, prod_dir, site):

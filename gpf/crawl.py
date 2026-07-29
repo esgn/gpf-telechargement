@@ -312,8 +312,6 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
         fix = (" → sous-ressources non aplaties" if flat
                else " → sans remède, fichiers d'un même feed")
         ctx.warn(f"{crumbs[-1][0]} : {len(clashing)} nom(s) de fichier en collision "
-                 f"(ex. {clashing[0]}){fix}",
-                 f"{crumbs[-1][0]} : noms de fichiers en collision "
                  f"(ex. {clashing[0]}){fix}")
     for name, child, e, payload in flat:
         if clashing:

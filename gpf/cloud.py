@@ -85,7 +85,7 @@ def has_surfaced_format(entry: dict) -> bool:
     supplémentaire, les formats figurant déjà au capabilities — pour que badge et encart
     ne divergent pas. Fonction pure."""
     return any((FORMAT_LABELS.get(t) or t) in CLOUD_FORMAT_LABELS
-               for t in entry.get("fmt_all") or ())
+               for t in entry["fmt_all"])
 
 
 def fetch_product_layers(client: Client, resource_entry: dict,

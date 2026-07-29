@@ -5,7 +5,7 @@
 
 import unittest
 
-from build import (_cards, _filtered_out, _patch_cloud, _splice_cloud,
+from build import (_cards, _fetch_chunk_live, _filtered_out, _patch_cloud, _splice_cloud,
                    _unknown_catalogue_keys, _CLOUD_START, _CLOUD_END)
 from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
@@ -1615,7 +1615,9 @@ class TestCloud(unittest.TestCase):
         self.assertTrue(cloud.has_surfaced_format({"fmt_all": ["PARQUET"]}))   # alias
         self.assertFalse(cloud.has_surfaced_format({"fmt_all": ["PMTILES"]}))
         self.assertFalse(cloud.has_surfaced_format({"fmt_all": ["geoflatbuffer/sozip"]}))
-        self.assertFalse(cloud.has_surfaced_format({}))               # fmt_all absent
+        # atom.parse_feed pose toujours « fmt_all » (liste, vide si l'entrée ne déclare
+        # aucun format) : c'est cette liste vide, et non une clé absente, qu'on rencontre.
+        self.assertFalse(cloud.has_surfaced_format({"fmt_all": []}))
 
     def test_latest_leaf_per_format_alias_folded(self):
         # PARQUET / FGB (alias) sont fondus sous GeoParquet / FlatGeoBuf via format_label.
@@ -1816,6 +1818,34 @@ class TestServices(unittest.TestCase):
 
 
 class TestCloudOnly(unittest.TestCase):
+    def _cat(self, cloud_native: bool):
+        import os
+        import tempfile
+        cn = ', "cloud_native": "P_PQT"' if cloud_native else ""
+        blob = ('{"themes":[{"id":"t","label":"T"}],'
+                '"products":[{"id":"P","theme":"t"' + cn + '}]}')
+        fd, path = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(blob)
+            return load_catalogue(path)
+        finally:
+            os.remove(path)
+
+    def test_fetch_chunk_live_empty_when_nothing_declared(self):
+        # aucun produit à accès direct : {} SANS requête, et rien à signaler
+        ctx = Ctx(_FakeClient({}), ".", footer="")
+        self.assertEqual(_fetch_chunk_live(ctx, self._cat(cloud_native=False)), {})
+        self.assertEqual(ctx.warnings, [])
+
+    def test_fetch_chunk_live_none_when_service_unreachable(self):
+        # accès direct déclaré mais capabilities injoignable (client factice) : None,
+        # distinct du {} ci-dessus, et un avertissement (jamais fatal : service secondaire)
+        ctx = Ctx(_FakeClient({}), ".", footer="")
+        self.assertIsNone(_fetch_chunk_live(ctx, self._cat(cloud_native=True)))
+        self.assertEqual(len(ctx.warnings), 1)
+        self.assertEqual(ctx.errors, [])
+
     def test_splice_cloud_replaces_between_markers(self):
         # --cloud-only remplace ce qui est entre les marqueurs, sans toucher au reste.
         page = f"<main>EN-TETE{_CLOUD_START}VIEUX{_CLOUD_END}<hr>ARBRE</main>"
