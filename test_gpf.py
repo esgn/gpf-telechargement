@@ -1854,6 +1854,33 @@ class TestCloudOnly(unittest.TestCase):
                 self.assertEqual(f.read(), original)     # inchangé
 
 
+class TestCtxWarn(unittest.TestCase):
+    def _warn(self, *args) -> tuple[Ctx, str]:
+        import contextlib
+        import io
+        ctx = Ctx(_FakeClient({}), ".", footer="")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            ctx.warn(*args)
+        return ctx, err.getvalue()
+
+    def test_warn_logs_detail_and_summarizes_short_form(self):
+        ctx, journal = self._warn("X : détail verbeux — et le conseil", "X : résumé")
+        self.assertEqual(ctx.warnings, ["X : résumé"])     # synthèse = forme compacte
+        self.assertIn("  ⚠ X : détail verbeux — et le conseil", journal)
+
+    def test_warn_single_message_serves_both(self):
+        ctx, journal = self._warn("X : message unique")
+        self.assertEqual(ctx.warnings, ["X : message unique"])
+        self.assertIn("  ⚠ X : message unique", journal)
+
+    def test_warn_never_fails_the_build(self):
+        # même en --fail-fast : un avertissement ne lève pas et ne pollue pas les erreurs
+        ctx = Ctx(_FakeClient({}), ".", footer="", fail_fast=True)
+        ctx.warn("X : anomalie non bloquante")
+        self.assertEqual(ctx.errors, [])
+
+
 class TestFailFast(unittest.TestCase):
     def test_fatal_records_and_raises_only_in_fail_fast(self):
         # défaut (fail-at-last) : on collecte sans lever, pour lister TOUS les feeds cassés

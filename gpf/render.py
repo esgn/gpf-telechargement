@@ -15,7 +15,7 @@ import html
 import os
 from string import Template
 
-from .api import log
+from .api import log, log_warning
 from .model import fmt_date, human_size
 
 # --------------------------------------------------------------------------- #
@@ -981,7 +981,9 @@ def _spec_icon(spec: dict) -> str:
     if not t:
         return _SPEC_ICON_DEFAULT
     if t not in SPEC_ICONS:
-        log(f"  ! type de spec inconnu « {t} » (label : {spec.get('label', '')!r})")
+        # Anomalie éditoriale, non bloquante : pas de Ctx ici, donc journal seulement
+        # (le rendu ne connaît pas la synthèse de fin de build).
+        log_warning(f"type de spec inconnu « {t} » (label : {spec.get('label', '')!r})")
         return _SPEC_ICON_DEFAULT
     return SPEC_ICONS[t]
 

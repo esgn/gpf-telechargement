@@ -25,7 +25,7 @@ import re
 import shutil
 
 from . import render
-from .api import Client, log
+from .api import Client, log, log_warning
 from .model import is_md5_file, last_segment, resource_id, slug
 from .rules import (GROUP_LEVELS, canonicalize_zones, dedupe_files, format_label,
                     homonyms, surviving_levels, unlabeled_zones)
@@ -65,6 +65,15 @@ class Ctx:
         self.errors.append(msg)
         if self.fail_fast:
             raise FailFast(msg)
+
+    def warn(self, journal: str, resume: str | None = None) -> None:
+        """Signale une anomalie non bloquante : une ligne dans le journal du build ET
+        une entrée dans la synthèse de fin — seule encore lisible après des heures de
+        crawl. `journal` porte le détail et le conseil ; `resume` en donne la version
+        compacte pour la synthèse, à défaut le même texte. Pendant de fatal, pour tout
+        ce qui n'empêche pas de publier."""
+        log_warning(journal)
+        self.warnings.append(resume or journal)
 
     def write_page(self, fs_dir, title, body, crumbs):
         """Écrit l'index.html d'un dossier. Toute page en repart SANS liste d'export :
@@ -195,17 +204,15 @@ def build_dir(ctx: Ctx, feed_url: str, fs_dir: str, crumbs, depth: int,
         # repli d'affichage (ZONE_LABELS / fusion DROM), mais on journalise ICI le
         # fichier amont concerné, pour pouvoir le remonter au producteur.
         for e in unlabeled_zones(dirs):
-            log(f"  ⚠ {crumbs[-1][0]} : zone « {e['zone']} » sans libellé API "
-                f"→ ex. {e['title'] or last_segment(e['href'])} ({e['href']})")
-            ctx.warnings.append(f"{crumbs[-1][0]} : zone {e['zone']} sans libellé API "
-                                f"(ex. {e['href']})")
+            ctx.warn(f"{crumbs[-1][0]} : zone « {e['zone']} » sans libellé API "
+                     f"→ ex. {e['title'] or last_segment(e['href'])} ({e['href']})",
+                     f"{crumbs[-1][0]} : zone {e['zone']} sans libellé API "
+                     f"(ex. {e['href']})")
         # Fusion des DROM sous codes concurrents (D971→GLP…) hors conflit de date.
         dirs, conflicts = canonicalize_zones(dirs)
         for code in conflicts:
-            log(f"  ~ {crumbs[-1][0]} : {code} non fusionné "
-                f"(date en conflit avec son code ISO)")
-            ctx.warnings.append(f"{crumbs[-1][0]} : zone {code} non fusionnée "
-                                f"(date en conflit avec son code ISO)")
+            ctx.warn(f"{crumbs[-1][0]} : zone {code} non fusionnée "
+                     f"(date en conflit avec son code ISO)")
         # id du produit (dernier segment du feed .../resource/<id>) : donne le contexte
         # au tri des zones (ex. « FR » = bloc et non national pour le LiDAR HD).
         _build_grouped(ctx, fs_dir, crumbs, dirs, GROUP_LEVELS, depth,
@@ -304,10 +311,10 @@ def _write_dir(ctx, fs_dir, crumbs, dirs, files, depth, dir_listings=None):
         # rencontré à ce jour, mais le message ne doit pas annoncer un remède absent.
         fix = (" → sous-ressources non aplaties" if flat
                else " → sans remède, fichiers d'un même feed")
-        log(f"  ⚠ {crumbs[-1][0]} : {len(clashing)} nom(s) de fichier en collision "
-            f"(ex. {clashing[0]}){fix}")
-        ctx.warnings.append(f"{crumbs[-1][0]} : noms de fichiers en collision "
-                            f"(ex. {clashing[0]}){fix}")
+        ctx.warn(f"{crumbs[-1][0]} : {len(clashing)} nom(s) de fichier en collision "
+                 f"(ex. {clashing[0]}){fix}",
+                 f"{crumbs[-1][0]} : noms de fichiers en collision "
+                 f"(ex. {clashing[0]}){fix}")
     for name, child, e, payload in flat:
         if clashing:
             _emit(ctx, os.path.join(fs_dir, child), _descend(crumbs, name),

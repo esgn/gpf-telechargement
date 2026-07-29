@@ -33,6 +33,14 @@ def log(msg: str) -> None:
     print(msg, file=sys.stderr, flush=True)
 
 
+def log_warning(msg: str) -> None:
+    """Ligne de journal d'une anomalie NON bloquante. Un seul préfixe pour toutes :
+    le journal d'un build de plusieurs heures se relit au grep, et « ⚠ » y marque
+    exactement ce que la synthèse de fin reprend (cf. crawl.Ctx.warn). Les échecs
+    gardent « ! », les réussites « + » et « ~ »."""
+    log(f"  ⚠ {msg}")
+
+
 def _parse_retry_after(headers) -> float | None:
     """Délai (s) demandé par un header « Retry-After », ou None s'il est absent ou
     illisible. RFC 7231 : soit un entier de secondes (« 5 »), soit une date HTTP
