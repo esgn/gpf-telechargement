@@ -67,12 +67,12 @@ DEFAULT_FOOTER = ("Index non officiel. Données diffusées par l'IGN via "
                   "donnée et pointe les liens de téléchargement directement vers "
                   "data.geopf.fr.")
 # Bloc « Besoin d'aide » de l'accueil. Texte vide => bloc masqué.
-DEFAULT_HELP_TEXT = "Besoin d'aide sur le service de téléchargement ? Voir"
-DEFAULT_HELP_LABEL = "la documentation officielle cartes.gouv.fr"
+DEFAULT_HELP_TEXT = ""
+DEFAULT_HELP_LINK_LABEL = "la documentation officielle cartes.gouv.fr"
 DEFAULT_HELP_URL = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
                     "utiliser-les-services-de-la-geoplateforme/telechargement/")
 # Lien vers le dépôt du code (icône GitHub discrète dans le footer). Vide => pas d'icône.
-DEFAULT_REPO_URL = "https://github.com/esgn/gpf-telechargement"
+DEFAULT_REPO_URL = ""
 
 
 def _site(cat: Catalogue) -> dict:
@@ -82,10 +82,10 @@ def _site(cat: Catalogue) -> dict:
     return {
         "title": s.get("title", "Téléchargement Géoplateforme"),
         "intro": s.get("intro", DEFAULT_INTRO),
-        "help_url": s.get("official_help_url", DEFAULT_HELP_URL),
+        "help_url": s.get("help_url", DEFAULT_HELP_URL),
         # help_text absent => défaut ; présent mais vide => bloc aide masqué (choix voulu).
         "help_text": s.get("help_text", DEFAULT_HELP_TEXT),
-        "help_link_label": s.get("help_link_label", DEFAULT_HELP_LABEL),
+        "help_link_label": s.get("help_link_label", DEFAULT_HELP_LINK_LABEL),
         "footer": s.get("footer", DEFAULT_FOOTER),
         "repo_url": s.get("repo_url", DEFAULT_REPO_URL),
         # Garde-fou de rendu : on ne déplie pas un dossier au-delà de ce nombre
@@ -103,6 +103,43 @@ def _service(cat: Catalogue, name: str) -> dict:
         "base_url": s.get("base_url", d["base_url"]),
         "capabilities_path": s.get("capabilities_path", d["capabilities_path"]),
     }
+
+
+def _unknown_catalogue_keys(cat: Catalogue) -> list[str]:
+    """Clés de configuration que le catalogue déclare et que personne ne lit — donc
+    sans effet, et presque toujours une typo (« max_entrie », « base-url »). Sans ce
+    contrôle le repli sur le défaut est TOTALEMENT silencieux : le build reste vert
+    avec une valeur qui n'est pas celle qu'on croit avoir écrite.
+
+    Les clés acceptées ne sont pas listées ici : celles du bloc « site » sont celles
+    que rend _site (correspondance 1 pour 1 avec le catalogue), celles d'un service
+    sont celles de DEFAULT_SERVICES. Impossible d'oublier de tenir la liste à jour ;
+    si un jour _site renommait une clé au passage, le symptôme serait cet
+    avertissement sur une clé légitime — bruyant, mais immédiatement visible.
+
+    Fonction pure : renvoie les messages, l'affichage est à l'appelant."""
+    msgs = [f"clé « site.{k} » inconnue — ignorée (typo ?)"
+            for k in sorted(set(cat.site) - set(_site(cat)))]
+    for name in sorted(cat.services):
+        if name not in DEFAULT_SERVICES:
+            attendus = ", ".join(sorted(DEFAULT_SERVICES))
+            msgs.append(f"service « {name} » inconnu — ignoré (attendus : {attendus})")
+            continue
+        msgs += [f"clé « services.{name}.{k} » inconnue — ignorée (typo ?)"
+                 for k in sorted(set(cat.services[name]) - set(DEFAULT_SERVICES[name]))]
+    return msgs
+
+
+def _warn_catalogue_keys(cat: Catalogue, warnings: list[str] | None = None) -> None:
+    """Signale les clés de configuration inconnues (cf. _unknown_catalogue_keys). Non
+    bloquant : une clé ignorée ne casse pas le site, elle le rend seulement autrement
+    qu'écrit. `warnings` (typiquement ctx.warnings) les reprend dans la synthèse de fin
+    de build, seule lisible après des heures de crawl ; --check n'a pas de Ctx et se
+    contente du journal."""
+    for msg in _unknown_catalogue_keys(cat):
+        log(f"  ⚠ {msg}")
+        if warnings is not None:
+            warnings.append(msg)
 
 
 def _section_card(product, title: str, cat: Catalogue, cloud_native: bool) -> dict:
@@ -127,9 +164,14 @@ def _filtered_out(only: str | None, only_theme: str | None,
                   product_id: str, theme: str) -> bool:
     """Vrai si un filtre --only / --only-theme est actif et exclut ce produit.
     Le produit reste listé dans la navigation (sa carte est déjà enregistrée),
-    mais il n'est ni crawlé ni construit."""
-    return bool((only and only != product_id)
-                or (only_theme and only_theme != theme))
+    mais il n'est ni crawlé ni construit. Chaque filtre est examiné pour lui-même :
+    la garde d'exclusivité de main (--only OU --only-theme) n'est pas une hypothèse
+    dont dépend le résultat."""
+    if only and only != product_id:
+        return True
+    if only_theme and only_theme != theme:
+        return True
+    return False
 
 
 def _warn_uncurated_formats(ctx: Ctx, resources: list[dict]) -> None:
@@ -243,6 +285,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
     ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"],
               workers=workers, fail_fast=fail_fast)
+    _warn_catalogue_keys(cat, ctx.warnings)
     _warn_uncurated_formats(ctx, resources)
     # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.
     # {} si aucun produit ne le déclare ou si le service est indisponible (non bloquant).
@@ -422,6 +465,7 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
     t0 = time.monotonic()
     client = Client(rps=rps, workers=workers)
     ctx = Ctx(client, out_dir, footer="", workers=workers)
+    _warn_catalogue_keys(cat, ctx.warnings)
     targets = [p for p in cat.included()
                if p.cloud_native and (not only or p.id == only)]
     if only and not targets:
@@ -606,6 +650,9 @@ def main(argv=None) -> int:
             return 2
 
     if args.check:
+        # --check est la commande d'audit du catalogue : les clés sans effet y ont
+        # leur place, au même titre que la dérive catalogue ↔ API.
+        _warn_catalogue_keys(cat)
         client = Client(rps=args.rps, workers=args.workers)
         return check_drift(client, cat, _service(cat, "download"), _service(cat, "chunk"))
 

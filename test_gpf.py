@@ -5,7 +5,8 @@
 
 import unittest
 
-from build import _cards, _patch_cloud, _splice_cloud, _CLOUD_START, _CLOUD_END
+from build import (_cards, _filtered_out, _patch_cloud, _splice_cloud,
+                   _unknown_catalogue_keys, _CLOUD_START, _CLOUD_END)
 from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
@@ -939,6 +940,23 @@ class TestCardOrder(unittest.TestCase):
                           {"name": "INSEE", "logo": "../assets/logos/insee.svg"}])
 
 
+class TestOnlyFilters(unittest.TestCase):
+    """Filtres de construction --only / --only-theme (exclusifs : main les refuse
+    ensemble). assertIs, et pas assertFalse : la fonction doit rendre un booléen
+    franc, un None passerait inaperçu dans un `if` mais mentirait sur son type."""
+
+    def test_no_filter_builds_everything(self):
+        self.assertIs(_filtered_out(None, None, "BDTOPO", "topo"), False)
+
+    def test_only_excludes_other_products(self):
+        self.assertIs(_filtered_out("BDTOPO", None, "BDTOPO", "topo"), False)
+        self.assertIs(_filtered_out("BDTOPO", None, "ADMIN-EXPRESS", "admin"), True)
+
+    def test_only_theme_excludes_other_themes(self):
+        self.assertIs(_filtered_out(None, "topo", "BDTOPO", "topo"), False)
+        self.assertIs(_filtered_out(None, "topo", "ADMIN-EXPRESS", "admin"), True)
+
+
 class TestRender(unittest.TestCase):
     def test_escaping(self):
         self.assertEqual(render.esc('<a>&"'), "&lt;a&gt;&amp;&quot;")
@@ -1770,6 +1788,25 @@ class TestServices(unittest.TestCase):
         self.assertEqual(Product({"id": "X"}).cloud_edition, "")
         self.assertEqual(Product({"id": "X", "cloud_edition": "2026-03-15"}).cloud_edition,
                          "2026-03-15")
+
+    def test_unknown_site_key_reported(self):
+        # typo dans « site » : la clé ne pilote rien, le défaut s'applique en silence
+        cat = self._load('{"site":{"max_entrie":10},"themes":[],"products":[]}')
+        self.assertEqual(_unknown_catalogue_keys(cat),
+                         ["clé « site.max_entrie » inconnue — ignorée (typo ?)"])
+
+    def test_unknown_service_key_and_service_name_reported(self):
+        cat = self._load('{"services":{"download":{"base-url":"https://d"},'
+                         '"donwload":{"base_url":"https://d"}},'
+                         '"themes":[],"products":[]}')
+        # un message par service, dans l'ordre alphabétique des noms de service
+        self.assertEqual(_unknown_catalogue_keys(cat), [
+            "service « donwload » inconnu — ignoré (attendus : chunk, download)",
+            "clé « services.download.base-url » inconnue — ignorée (typo ?)"])
+
+    def test_real_catalogue_has_no_unknown_key(self):
+        # garde-fou sur le vrai catalogue : aucune clé sans effet
+        self.assertEqual(_unknown_catalogue_keys(load_catalogue("catalogue.json")), [])
 
     def test_real_catalogue_cloud_native_declared(self):
         # le vrai catalogue déclare au moins un accès direct (BD TOPO, Contours IRIS…)

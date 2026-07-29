@@ -14,8 +14,8 @@
     "title": "Téléchargement Géoplateforme",
     // Chapô affiché sous le titre de l'accueil (texte simple ; vide = pas de chapô).
     "intro": "Parcourez et téléchargez les données ouvertes de l'IGN diffusées par le service de téléchargement de la Géoplateforme, organisées par thème.",
-    "official_help_url": "https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/",
-    // Bloc « aide » en bas de l'accueil : phrase + libellé du lien (vers official_help_url).
+    "help_url": "https://cartes.gouv.fr/aide/fr/guides-utilisateur/utiliser-les-services-de-la-geoplateforme/telechargement/",
+    // Bloc « aide » en bas de l'accueil : phrase + libellé du lien (vers help_url).
     // help_text vide → bloc masqué.
     "help_text": "Besoin d'aide sur le service de téléchargement ? Voir",
     "help_link_label": "la documentation officielle cartes.gouv.fr",
@@ -24,7 +24,9 @@
     "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr.",
     // Garde-fou d'affichage : un dossier dépassant ce nombre d'entrées n'est pas
     // déplié (le service pourrait en servir davantage). 0 = illimité.
-    "max_entries": 50000
+    "max_entries": 50000,
+    // Lien vers le dépôt du code (icône GitHub discrète dans le footer). Vide => pas d'icône.
+    "repo_url": "https://github.com/esgn/gpf-telechargement"
   },
 
   // Services de téléchargement interrogés :
