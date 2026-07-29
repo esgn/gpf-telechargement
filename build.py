@@ -11,6 +11,7 @@ Stdlib uniquement (urllib + xml.etree). Aucune dépendance. Python ≥ 3.11.
     python build.py --check                  # dérive catalogue ↔ API (ne construit rien)
     python build.py --cloud-only BDTOPO      # régénère le seul encart cloud-native (sans re-crawl)
     python -m unittest                       # tests des fonctions pures (sans réseau)
+    python build.py --fail-fast              # couper au 1er feed cassé (CI).
 
 Prévisualisation locale (un serveur HTTP est requis, file:// ne résout pas les
 index.html de sous-dossiers) :
@@ -42,6 +43,7 @@ DEFAULT_OUT = "site"
 ASSETS_DIR = "assets"        # copié tel quel vers <out>/assets (logos de producteurs…)
 PAGES_DIR = "pages"          # sources Markdown des pages éditoriales (converties, NON copiées)
 TUTOS_DIR = "tutos"          # tutos cloud-native par produit : tutos/<id>.md (Markdown, convertis)
+
 # Services de téléchargement interrogés, avec repli si le catalogue ne les précise
 # pas. « download » = arborescence classique (service historique) ; « chunk » = accès
 # direct cloud-native (GeoParquet / FlatGeoBuf interrogeables à distance à la couche).
@@ -51,15 +53,10 @@ DEFAULT_SERVICES = {
     "chunk": {"base_url": "https://data.geopf.fr/chunk/telechargement",
               "capabilities_path": "/capabilities"},
 }
-# Repère d'insertion : _prepend_body insère l'en-tête produit juste après ce <main>
-# du gabarit render._PAGE. Doit rester synchrone avec render._PAGE.
-_MAIN_TAG = "<main>\n"
 # Marqueurs (commentaires HTML) encadrant l'encart cloud-native dans le index.html d'une
 # fiche : --cloud-only remplace ce qui est entre eux sans re-crawler l'arbre de télécharg.
 _CLOUD_START = "<!--cloud-native:start-->"
 _CLOUD_END = "<!--cloud-native:end-->"
-DEFAULT_HELP = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
-                "utiliser-les-services-de-la-geoplateforme/telechargement/")
 # Chapô de l'accueil (repli si "intro" absent de la config site du catalogue).
 DEFAULT_INTRO = ("Parcourez et téléchargez les données de l'IGN diffusées par la "
                  "Géoplateforme, organisées par thème. Chaque produit renvoie ses "
@@ -69,10 +66,12 @@ DEFAULT_FOOTER = ("Index non officiel. Données diffusées par l'IGN via "
                   "[data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune "
                   "donnée et pointe les liens de téléchargement directement vers "
                   "data.geopf.fr.")
-# Bloc « Besoin d'aide » de l'accueil. Texte vide → bloc masqué.
-DEFAULT_HELP_TEXT = "Besoin d'aide sur le service ? Voir"
-DEFAULT_HELP_LABEL = "aide officielle cartes.gouv.fr"
-# Lien vers le dépôt du code (icône GitHub discrète dans le footer). Vide → pas d'icône.
+# Bloc « Besoin d'aide » de l'accueil. Texte vide => bloc masqué.
+DEFAULT_HELP_TEXT = "Besoin d'aide sur le service de téléchargement ? Voir"
+DEFAULT_HELP_LABEL = "la documentation officielle cartes.gouv.fr"
+DEFAULT_HELP_URL = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
+                    "utiliser-les-services-de-la-geoplateforme/telechargement/")
+# Lien vers le dépôt du code (icône GitHub discrète dans le footer). Vide => pas d'icône.
 DEFAULT_REPO_URL = "https://github.com/esgn/gpf-telechargement"
 
 
@@ -83,8 +82,8 @@ def _site(cat: Catalogue) -> dict:
     return {
         "title": s.get("title", "Téléchargement Géoplateforme"),
         "intro": s.get("intro", DEFAULT_INTRO),
-        "help_url": s.get("official_help_url", DEFAULT_HELP),
-        # help_text absent → défaut ; présent mais vide → bloc aide masqué (choix voulu).
+        "help_url": s.get("official_help_url", DEFAULT_HELP_URL),
+        # help_text absent => défaut ; présent mais vide => bloc aide masqué (choix voulu).
         "help_text": s.get("help_text", DEFAULT_HELP_TEXT),
         "help_link_label": s.get("help_link_label", DEFAULT_HELP_LABEL),
         "footer": s.get("footer", DEFAULT_FOOTER),
@@ -92,9 +91,6 @@ def _site(cat: Catalogue) -> dict:
         # Garde-fou de rendu : on ne déplie pas un dossier au-delà de ce nombre
         # d'entrées (le service, lui, pourrait en servir davantage). 0 = illimité.
         "max_entries": s.get("max_entries", 0),
-        # Lien optionnel vers des exemples/tutoriels d'usage cloud-native (le tutoriel
-        # détaillé vit hors de la fiche). Vide → l'encart n'affiche pas de lien.
-        "cloud_help_url": s.get("cloud_help_url", ""),
     }
 
 
@@ -109,11 +105,11 @@ def _service(cat: Catalogue, name: str) -> dict:
     }
 
 
-def _section_card(product, title: str, cat: Catalogue,
-                  cloud_native: bool = False) -> dict:
-    """Dict d'un produit tel que stocké dans `sections` (consommé par _cards).
-    Factorise les deux branches de run_build (page éditoriale / produit crawlé).
-    `cloud_native` : le produit expose-t-il un accès direct (badge sur la carte) ?"""
+def _section_card(product, title: str, cat: Catalogue, cloud_native: bool) -> dict:
+    """Dict d'un produit tel que stocké dans `sections` : seule productrice de ces
+    clés, relues par _cards pour le rendu des cartes (accueil et pages de thème).
+    Appelée pour TOUT produit inclus, page éditoriale comprise, et avant le filtre
+    --only : la navigation reste complète même quand un seul produit est construit."""
     return {"id": product.id, "title": title, "summary": product.summary,
             "update": product.update, "order": product.order,
             "retired": product.retired, "cloud_native": cloud_native,
@@ -178,7 +174,7 @@ def _cloud_tuto(product_id: str) -> tuple[str, list[tuple[str, str]]]:
         return split_sections(f.read())
 
 
-def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
+def _cloud_block(ctx: Ctx, resource_entry: dict, product) -> str:
     """HTML de l'encart d'accès direct d'un produit : sonde COURTE de sa ressource chunk
     (cloud.fetch_product_layers, en épinglant product.cloud_edition si défini) + tutos
     éditoriaux (tutos/<id>.md), puis rendu (render.cloud_block). Renvoie « » si la
@@ -216,8 +212,7 @@ def _cloud_block(ctx: Ctx, resource_entry: dict, product, site: dict) -> str:
             f"{render.MAX_CLOUD_TABS} onglets affichables — sections en trop tronquées.")
         ctx.warnings.append(f"{product.id} : tuto à {len(tuto_tabs)} sections, "
                             f"tronqué à {render.MAX_CLOUD_TABS} onglets")
-    return render.cloud_block(layers, help_url=site["cloud_help_url"],
-                              tuto_intro=tuto_intro, tuto_tabs=tuto_tabs)
+    return render.cloud_block(layers, tuto_intro=tuto_intro, tuto_tabs=tuto_tabs)
 
 
 def run_build(cat: Catalogue, out_dir: str, only: str | None,
@@ -307,8 +302,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
                 # Encart d'accès direct : sonde COURTE du service chunk, seulement pour un
                 # produit à accès direct effectivement construit (haut de fiche, au-dessus
                 # de l'arbre). Vide sinon.
-                cloud_html = (_cloud_block(ctx, cloud_entry, product, site)
-                              if has_cloud else "")
+                cloud_html = _cloud_block(ctx, cloud_entry, product) if has_cloud else ""
                 # La sonde live peut ne rien ramener (feuilles inaccessibles/partielles au
                 # build) alors que le capabilities annonçait un format : encart vide → on
                 # retire le badge de la carte, pour ne pas afficher « Cloud-native » sur une
@@ -392,7 +386,7 @@ def _splice_cloud(page: str, inner: str) -> str | None:
     return page[:i] + _CLOUD_START + inner + _CLOUD_END + page[j + len(_CLOUD_END):]
 
 
-def _patch_cloud(ctx: Ctx, product, resource_entry: dict, prod_dir: str, site: dict) -> bool:
+def _patch_cloud(ctx: Ctx, product, resource_entry: dict, prod_dir: str) -> bool:
     """Régénère l'encart cloud-native d'un produit et le réinjecte dans sa fiche DÉJÀ
     construite (`<prod_dir>/index.html`), SANS re-crawler l'arbre de téléchargement.
     Renvoie True si la fiche a été patchée. Non destructif sinon : signale et n'écrit rien
@@ -406,7 +400,7 @@ def _patch_cloud(ctx: Ctx, product, resource_entry: dict, prod_dir: str, site: d
         return False
     with open(index, encoding="utf-8") as f:
         page = f.read()
-    patched = _splice_cloud(page, _cloud_block(ctx, resource_entry, product, site))
+    patched = _splice_cloud(page, _cloud_block(ctx, resource_entry, product))
     if patched is None:
         log(f"  ! « {product.id} » : marqueurs cloud-native absents (fiche construite avant "
             f"cette option) — reconstruire la fiche une fois : python build.py --only {product.id}")
@@ -426,7 +420,6 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
     accès direct. Ne touche ni à l'accueil, ni aux pages de thème, ni aux scripts du
     gabarit (un build complet reste nécessaire pour ceux-là)."""
     t0 = time.monotonic()
-    site = _site(cat)
     client = Client(rps=rps, workers=workers)
     ctx = Ctx(client, out_dir, footer="", workers=workers)
     targets = [p for p in cat.included()
@@ -489,15 +482,17 @@ def _build_page(ctx: Ctx, product, prod_dir, title, theme_label) -> None:
 
 
 def _prepend_body(index_path: str, html_fragment: str) -> None:
-    """Insère `html_fragment` juste après <main> dans un index.html déjà écrit.
-    Lève si le repère <main> est introuvable : ce couplage avec render._PAGE ne
-    doit pas casser silencieusement (sinon la fiche produit perdrait son en-tête)."""
+    """Insère `html_fragment` juste après render.MAIN_TAG (l'ouverture de <main>)
+    dans un index.html déjà écrit. Lève si le repère est introuvable : ce couplage
+    avec le gabarit ne doit pas casser silencieusement (sinon la fiche produit
+    perdrait son en-tête)."""
     with open(index_path, encoding="utf-8") as f:
         page = f.read()
-    if _MAIN_TAG not in page:
-        raise RuntimeError(f"repère {_MAIN_TAG!r} absent de {index_path} "
+    tag = render.MAIN_TAG
+    if tag not in page:
+        raise RuntimeError(f"repère {tag!r} absent de {index_path} "
                            "(gabarit render._PAGE modifié ?)")
-    page = page.replace(_MAIN_TAG, _MAIN_TAG + html_fragment + "\n", 1)
+    page = page.replace(tag, tag + html_fragment + "\n", 1)
     with open(index_path, "w", encoding="utf-8") as f:
         f.write(page)
 

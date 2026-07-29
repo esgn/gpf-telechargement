@@ -593,6 +593,11 @@ $code_copy
 </html>
 """)
 
+# Ouverture de <main> telle qu'elle apparaît dans _PAGE : build._prepend_body s'en
+# sert comme repère pour insérer l'en-tête produit dans une page déjà écrite. Publiée
+# ici, avec le gabarit, pour qu'un seul endroit en décide (test : test_main_tag_in_page).
+MAIN_TAG = "<main>\n"
+
 
 # --------------------------------------------------------------------------- #
 # Assemblage de page + fragments
@@ -1055,7 +1060,7 @@ def _cloud_tabs(intro: str, tabs: list[tuple[str, str]] | None) -> str:
             + "</div></details>")
 
 
-def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
+def cloud_block(layers: dict, *, tuto_intro: str = "",
                 tuto_tabs: list[tuple[str, str]] | None = None) -> str:
     """Encart « accès direct pour l'analyse » d'une fiche produit : replié par défaut
     (<details>), inséré en HAUT de fiche (au-dessus de l'arbre de téléchargement, qui
@@ -1064,8 +1069,7 @@ def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
     stylé en bouton dont le clic COPIE l'URL du fichier au lieu de la suivre : le href
     alimente l'aperçu natif de l'URL dans la barre d'état du navigateur au survol, mais
     ces fichiers pèsent souvent plusieurs Gio et se copient pour être interrogés à
-    distance, pas cliqués. `layers` : structure de
-    cloud.fetch_product_layers. `help_url` : lien optionnel vers des tutoriels externes.
+    distance, pas cliqués. `layers` : structure de cloud.fetch_product_layers.
     `tuto_intro`/`tuto_tabs` : tutos (tutos/<produit>.md découpé par
     gpf.markdown.split_sections), rendus en ONGLETS CSS au-dessus des couches ; omis si
     `tuto_tabs` est vide. Renvoie « » si `layers` est vide (rien à montrer)."""
@@ -1106,16 +1110,11 @@ def cloud_block(layers: dict, *, help_url: str = "", tuto_intro: str = "",
     table = ('<div class="scroll"><table class="listing cloud-layers">'
              f'<thead><tr>{head}</tr></thead><tbody>{"".join(trs)}</tbody></table></div>')
 
-    # « Comment s'en servir » : phrase courte (braces littérales → PAS d'f-string) +
-    # lien optionnel vers les tutoriels (le « super tuto » vit hors de la fiche).
+    # « Comment s'en servir » : phrase courte, aucune valeur interpolée (pas d'f-string).
     how = ('<p class="cloud-how">Interrogez la donnée à distance avec DuckDB, GDAL '
            "ou Pyarrow : seuls les objets que vous filtrez (par emprise ou par attribut) "
            "sont rapatriés, jamais le fichier entier. "
-           "Données interrogeables via le <a href=\"https://cartes.gouv.fr/aide/fr/partenaires/ign/generalites-ign/actualites/2026-06-flatgeobuf-geoparquet/\" target=\"_blank\" rel=\"noopener\">service de téléchargement partiel</a>.")
-    if help_url:
-        how += (f' <a href="{esc(help_url)}" target="_blank" rel="noopener">'
-                "exemples et tutoriels</a>.")
-    how += "</p>"
+           "Données interrogeables via le <a href=\"https://cartes.gouv.fr/aide/fr/partenaires/ign/generalites-ign/actualites/2026-06-flatgeobuf-geoparquet/\" target=\"_blank\" rel=\"noopener\">service de téléchargement partiel</a>.</p>")
 
     n = len(layers["couches"])
     tuto = _cloud_tabs(tuto_intro, tuto_tabs)

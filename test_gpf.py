@@ -943,6 +943,12 @@ class TestRender(unittest.TestCase):
     def test_escaping(self):
         self.assertEqual(render.esc('<a>&"'), "&lt;a&gt;&amp;&quot;")
 
+    def test_main_tag_in_page(self):
+        # build._prepend_body cherche ce repère dans une page déjà rendue : il doit
+        # rester une sous-chaîne exacte du gabarit, sinon les fiches perdent leur
+        # en-tête (RuntimeError au build).
+        self.assertIn(render.MAIN_TAG, render._PAGE.template)
+
     def test_breadcrumb_relative_paths(self):
         out = render.breadcrumb([("Accueil", 2), ("Thème", 1), ("Produit", 0)])
         self.assertIn('href="../../"', out)   # Accueil, 2 crans
@@ -1689,12 +1695,6 @@ class TestCloudBlock(unittest.TestCase):
         self.assertIn('class="cloud-none"', html)
         self.assertIn('href="https://x/troncon_de_route.parquet"', html)  # présent en GeoParquet
 
-    def test_cloud_block_help_link_optional(self):
-        self.assertNotIn("exemples et tutoriels", render.cloud_block(self.LAYERS))
-        with_link = render.cloud_block(self.LAYERS, help_url="https://tuto")
-        self.assertIn('href="https://tuto"', with_link)
-        self.assertIn("exemples et tutoriels", with_link)
-
     def test_cloud_block_empty_layers(self):
         self.assertEqual(render.cloud_block({}), "")
         self.assertEqual(render.cloud_block({"formats": [], "couches": []}), "")
@@ -1796,8 +1796,7 @@ class TestCloudOnly(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as d:
             ctx = Ctx(_FakeClient({}), d, footer="")
-            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d,
-                              {"cloud_help_url": ""})
+            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d)
             self.assertFalse(ok)
             self.assertEqual(os.listdir(d), [])          # rien écrit
 
@@ -1812,8 +1811,7 @@ class TestCloudOnly(unittest.TestCase):
                 f.write(original)
             # client factice → all_entries None → _cloud_block renvoie "" → _splice_cloud None
             ctx = Ctx(_FakeClient({}), d, footer="")
-            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d,
-                              {"cloud_help_url": ""})
+            ok = _patch_cloud(ctx, Product({"id": "X"}), {"href": "R"}, d)
             self.assertFalse(ok)
             with open(index, encoding="utf-8") as f:
                 self.assertEqual(f.read(), original)     # inchangé
