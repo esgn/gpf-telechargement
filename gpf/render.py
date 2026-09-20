@@ -802,9 +802,10 @@ def _spec_icon(spec: dict) -> str:
 
 def product_header(product) -> str:
     """En-tête d'une fiche produit : titre, éventuel bandeau « produit arrêté »,
-    résumé, liens de spécification. Un produit arrêté reste accessible par son URL
-    même quand sa carte est masquée : le bandeau lève toute ambiguïté sur son statut
-    (le motif — remplacement, etc. — est repris du champ `update` s'il est renseigné)."""
+    résumé, liens de spécification. Un produit arrêté reste publié et listé dans la
+    grille ; le bandeau double le badge « Arrêté » de sa carte et lève toute ambiguïté
+    sur son statut (le motif — remplacement, etc. — est repris du champ `update` s'il
+    est renseigné)."""
     out = [f"<h1>{esc(product.title or product.id)}</h1>"]
     if getattr(product, "retired", False):
         motif = f" — {esc(product.update)}" if product.update else ""

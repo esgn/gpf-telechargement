@@ -102,7 +102,7 @@
       "id": "ADMIN-EXPRESS-COG-CARTO", "title": "ADMIN EXPRESS COG CARTO", "theme": "admin", "producer": "ign",
       "summary": "ADMIN EXPRESS COG à géométrie généralisée, adaptée à la cartographie.",
       "update": "Annuelle (calée sur COG INSEE)",
-      "cloud_native": "ADMIN-EXPRESS-COG-CARTO-PARTIEL",
+      "cloud_native": "ADMIN-EXPRESS-COG-CARTO",
       "specs": [
         { "label": "Descriptif de contenu - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_ADMIN_EXPRESS_4-0.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - ADMIN EXPRESS COG CARTO (offre ADMIN EXPRESS v4.0, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_ADMIN_EXPRESS_4-0.pdf", "type": "livraison" }
@@ -173,7 +173,7 @@
       "summary": "Modélisation vectorielle 3D du territoire : bâti, réseaux, hydrographie, végétation. Précision métrique.",
       "update": "Trimestrielle",
       "cloud_native": "BDTOPO_PQT",
-      "cloud_edition": "2026-03-15",
+      "cloud_edition": "2026-06-15",
       "specs": [
         { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - BD TOPO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" },

@@ -56,8 +56,8 @@ class Product:
         self.update: str = raw.get("update") or ""
         self.include: bool = raw.get("include", True)
         # Produit arrêté : plus maintenu, généralement remplacé par un autre. Reste
-        # publié (contrairement à include=false) mais sa carte est grisée et masquée
-        # par défaut, révélable via le bouton d'affichage. Défaut False = actif.
+        # publié (contrairement à include=false), mais sa carte porte un fond ocre et
+        # un badge « Arrêté », et sa fiche un bandeau de statut. Défaut False = actif.
         self.retired: bool = raw.get("retired", False)
         # Entrée « page éditoriale » : si renseigné, ce n'est pas un produit crawlé
         # mais une page de contenu rédigé. Nom d'un fichier Markdown dans pages/

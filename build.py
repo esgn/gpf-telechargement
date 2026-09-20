@@ -568,7 +568,10 @@ def _copy_assets(out_dir: str) -> None:
     shutil.copytree(ASSETS_DIR, dest)
 
 
-def main(argv=None) -> int:
+def _parse_args(argv=None) -> argparse.Namespace:
+    """Décrit la ligne de commande et rejette les combinaisons d'options invalides.
+    Les refus passent par p.error (usage sur stderr, sortie en code 2) : le parser
+    reste donc local à cette fonction, qui ne rend que les options validées."""
     p = argparse.ArgumentParser(description="Générateur du site de téléchargement Géoplateforme.")
     p.add_argument("--catalogue", default=DEFAULT_CATALOGUE, help="fichier catalogue (défaut : catalogue.json)")
     p.add_argument("--out", default=DEFAULT_OUT, help="dossier de sortie (défaut : site)")
@@ -597,12 +600,21 @@ def main(argv=None) -> int:
     if args.workers < 1:
         p.error("--workers doit être ≥ 1.")
 
+    return args
+
+
+def main(argv=None) -> int:
+    # 1. Options de la ligne de commande, déjà validées entre elles (sinon argparse a quitté).
+    args = _parse_args(argv)
+
+    # 2. Catalogue : source de vérité du build. Illisible ou invalide, on échoue immédiatement.
     try:
         cat = load_catalogue(args.catalogue)
     except CatalogueError as e:
         log(f"ERREUR catalogue : {e}")
         return 2
 
+    # 3. Thème inconnu : contrôle qui exige le catalogue, donc impossible dans _parse_args.
     if args.only_theme:
         valid = {tid for tid, _ in cat.themes_in_display_order()}
         if args.only_theme not in valid:
@@ -610,13 +622,16 @@ def main(argv=None) -> int:
                 f"Thèmes disponibles : {', '.join(sorted(valid))}.")
             return 2
 
+    # 4. --check : sortie anticipée. Rapport de dérive entre le catalogue et l'API.
     if args.check:
         client = Client(rps=args.rps, workers=args.workers)
         return check_drift(client, cat, _service(cat, "download"), _service(cat, "chunk"))
 
+    # 5. --cloud-only : sortie anticipée. Réécrit l'encart cloud-native des fiches déjà construites.
     if args.cloud_only is not None:
         return run_cloud_only(cat, args.out, args.cloud_only or None, args.rps, args.workers)
 
+    # 6. Build complet (comportement par défaut), éventuellement restreint par --only/--only-theme.
     return run_build(cat, args.out, args.only, args.only_theme, args.rps, args.workers,
                      args.fail_fast)
 

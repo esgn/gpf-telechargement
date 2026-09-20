@@ -13,7 +13,7 @@ WHERE code_insee_du_departement = '58';
 ## GDAL GeoParquet
 
 ```bash
-# Installation avec conda:
+# Installation de gdal avec support geoparquet via conda:
 # > conda create --name gdal-parquet
 # > conda install -c conda-forge gdal libgdal-arrow-parquet libgdal-adbc
 
