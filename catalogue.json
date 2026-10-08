@@ -173,7 +173,7 @@
       "summary": "Modélisation vectorielle 3D du territoire : bâti, réseaux, hydrographie, végétation. Précision métrique.",
       "update": "Trimestrielle",
       "cloud_native": "BDTOPO_PQT",
-      "cloud_edition": "2026-06-15",
+      "cloud_edition": "2026-09-15",
       "specs": [
         { "label": "Descriptif de contenu - BD TOPO® (v3.5, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DC_BDTOPO_3-5.pdf", "type": "contenu" },
         { "label": "Descriptif de livraison - BD TOPO® (vecteur, PDF)", "url": "https://data.geopf.fr/annexes/ressources/documentation/DL_vecteur.pdf", "type": "livraison" },
