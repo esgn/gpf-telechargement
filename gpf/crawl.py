@@ -41,12 +41,13 @@ class Ctx:
     """État mutable partagé pendant un build : client, dossier de sortie, méta de
     page, garde-fou volumétrie, compteurs."""
 
-    def __init__(self, client: Client, out_dir: str, footer: str,
+    def __init__(self, client: Client, out_dir: str, footer: str, repo_link: str = "",
                  max_entries: int = 0, workers: int = _DEFAULT_HTTP_WORKERS,
                  fail_fast: bool = False):
         self.client = client
         self.out_dir = out_dir
         self.footer = footer          # bloc <footer> HTML pré-rendu (identique partout)
+        self.repo_link = repo_link    # icône GitHub pré-rendue, en haut à droite (idem)
         self.max_entries = max_entries
         self.workers = workers        # requêtes de crawl en parallèle (throttle global du client)
         self.fail_fast = fail_fast    # couper au 1er feed mort (cf. fatal)
@@ -64,7 +65,7 @@ class Ctx:
 
     def write_page(self, fs_dir, title, body, crumbs):
         render.write_page(fs_dir, title, body, crumbs=crumbs, footer=self.footer,
-                          out_dir=self.out_dir)
+                          repo_link=self.repo_link, out_dir=self.out_dir)
         self.pages += 1
 
 

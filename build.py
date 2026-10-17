@@ -72,7 +72,7 @@ DEFAULT_FOOTER = ("Index non officiel. Données diffusées par l'IGN via "
 # Bloc « Besoin d'aide » de l'accueil. Texte vide → bloc masqué.
 DEFAULT_HELP_TEXT = "Besoin d'aide sur le service ? Voir"
 DEFAULT_HELP_LABEL = "aide officielle cartes.gouv.fr"
-# Lien vers le dépôt du code (icône GitHub discrète dans le footer). Vide → pas d'icône.
+# Lien vers le dépôt du code (icône GitHub en haut à droite de chaque page). Vide : pas d'icône.
 DEFAULT_REPO_URL = "https://github.com/esgn/gpf-telechargement"
 
 
@@ -245,8 +245,9 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     # Horodatage du build en heure de Paris (indépendant du fuseau du runner CI).
     now_paris = datetime.now(ZoneInfo("Europe/Paris"))
     generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
-    footer = render.render_footer(site["footer"], generated, repo_url=site["repo_url"])
-    ctx = Ctx(client, out_dir, footer, max_entries=site["max_entries"],
+    footer = render.render_footer(site["footer"], generated)
+    repo_link = render.render_repo_link(site["repo_url"])
+    ctx = Ctx(client, out_dir, footer, repo_link, max_entries=site["max_entries"],
               workers=workers, fail_fast=fail_fast)
     _warn_uncurated_formats(ctx, resources)
     # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.

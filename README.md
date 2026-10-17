@@ -135,7 +135,7 @@ finales** (pour rester éditable à la main). Cinq blocs :
 | `official_help_url` | URL de l'aide officielle. |
 | `help_text`, `help_link_label` | Texte et libellé du lien d'aide de l'accueil ; `help_text` vide masque le bloc. |
 | `footer` | Pied de page en Markdown ; la date de génération en heure de Paris est ajoutée automatiquement. |
-| `repo_url` | Lien du dépôt dans le pied de page ; vide pour masquer l'icône GitHub. |
+| `repo_url` | Lien du dépôt (icône GitHub en haut à droite de chaque page) ; vide pour masquer l'icône. |
 | `max_entries` | Seuil d'entrées au-delà duquel un dossier renvoie vers le flux source ; `0` = illimité. Le catalogue fourni le fixe à `50000`. |
 | `cloud_help_url` | Lien optionnel vers des tutoriels externes dans l'encart d'accès direct. |
 

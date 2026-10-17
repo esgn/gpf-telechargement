@@ -964,17 +964,31 @@ class TestRender(unittest.TestCase):
     def test_render_footer(self):
         # préfixe « Généré le <date>. » + Markdown converti, lien externe en nouvel onglet
         f = render.render_footer("Via [x](https://e/y).", "12 juil. 2026")
-        self.assertIn('<span class="footer-text">Généré le 12 juil. 2026. ', f)
+        self.assertIn('<footer>Généré le 12 juil. 2026. ', f)
         self.assertIn('<a href="https://e/y" target="_blank" rel="noopener">x</a>', f)
         self.assertNotIn("<p>", f)          # pas d'enrobage <p> dans le footer
         self.assertTrue(f.startswith("<footer>") and f.endswith("</footer>"))
 
-    def test_render_footer_repo_link(self):
-        # repo_url renseigné → lien dépôt (nouvel onglet) ; vide → aucun lien repo
-        f = render.render_footer("x.", "g", repo_url="https://github.com/u/r")
-        self.assertIn('class="repo-link"', f)
-        self.assertIn('href="https://github.com/u/r"', f)
-        self.assertNotIn("repo-link", render.render_footer("x.", "g"))
+    def test_render_repo_link(self):
+        # repo_url renseigné : lien dépôt (nouvel onglet) ; vide : aucune icône
+        a = render.render_repo_link("https://github.com/u/r")
+        self.assertIn('class="repo-link"', a)
+        self.assertIn('href="https://github.com/u/r" target="_blank"', a)
+        self.assertEqual(render.render_repo_link(""), "")
+
+    def test_repo_link_top_right(self):
+        # icône en haut de page, à gauche du bouton de thème, et plus dans le footer
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            render.write_page(d, "T", "x", crumbs="", footer=render.render_footer("x.", "g"),
+                              out_dir=d,
+                              repo_link=render.render_repo_link("https://github.com/u/r"))
+            page = open(os.path.join(d, "index.html"), encoding="utf-8").read()
+        top, repo = page.index('class="top-actions"'), page.index('class="repo-link"')
+        self.assertLess(top, repo)
+        self.assertLess(repo, page.index('id="theme-toggle"'))
+        self.assertNotIn("repo-link", page[page.index("<footer>"):])
 
 
 class TestMarkdown(unittest.TestCase):

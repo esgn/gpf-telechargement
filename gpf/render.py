@@ -357,16 +357,28 @@ table.cloud-layers td:not(:first-child) { text-align:right; white-space:nowrap; 
 }
 
 footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
-         font-size:.85rem; color:var(--muted);
-         display:flex; align-items:flex-start; gap:1rem; }
-/* Le texte du footer coule normalement (un seul bloc) et prend la largeur ; l'icône
-   dépôt reste à droite. */
-footer .footer-text { flex:1; }
-/* Lien dépôt : icône GitHub discrète mais bien visible, en gris muted, passant à la
-   couleur du texte au survol. flex-shrink:0 : ne s'écrase pas. display:flex sur le
-   lien pour que le SVG ne soit pas rogné par la hauteur de ligne. */
-footer .repo-link { flex:0 0 auto; display:flex; color:var(--muted); }
-footer .repo-link:hover { color:var(--fg); }
+         font-size:.85rem; color:var(--muted); }
+
+/* Coin haut-droit : icône GitHub (lien vers le dépôt) à gauche de l'interrupteur
+   clair/sombre. L'interrupteur est fixé à la fenêtre ; le groupe, lui, reste en haut
+   de page (absolute) : l'icône défile avec le contenu et ne le recouvre jamais. Le
+   groupe reprend donc la position (top, right) et la hauteur de l'interrupteur, et
+   réserve sa largeur (padding-right) pour que l'icône se cale juste à sa gauche. */
+.top-actions { position:absolute; top:1.25rem; right:2rem; height:1.9rem;
+               padding-right:calc(3.4rem + .9rem);
+               display:flex; align-items:center; gap:.9rem; }
+/* Icône GitHub en gris muted, à la couleur du texte au survol. display:flex : le SVG
+   n'est pas rogné par la hauteur de ligne. Le préfixe .top-actions fait primer ces
+   règles sur a:visited, qui passerait l'icône en bleu une fois le dépôt visité. */
+.top-actions .repo-link { display:flex; color:var(--muted); }
+.top-actions .repo-link:hover { color:var(--fg); }
+.top-actions .repo-link:focus-visible { outline:2px solid var(--accent); outline-offset:2px;
+                                        border-radius:4px; }
+/* Au-dessus de 768 px, le coin haut-droit empiète sur la colonne de contenu quand la
+   fenêtre est étroite : le fil d'Ariane lui réserve sa place (largeur du coin, moins la
+   marge du body, plus un peu d'air) et passe à la ligne avant au lieu de glisser
+   dessous. En dessous, le coin est en float et le fil s'enroule déjà à sa gauche. */
+@media (min-width:769px) { nav.crumbs { padding-right:6.5rem; } }
 
 /* Bouton de bascule clair/sombre, fixé en haut à droite. Discret mais détaché du
    fond : fond légèrement teinté (--row, distinct du blanc de la page), bordure plus
@@ -410,18 +422,21 @@ footer .repo-link:hover { color:var(--fg); }
 
 /* Sur mobile/tablette portrait, le bouton fixé (position:fixed) à la fenêtre
    chevauchait tout contenu atteignant le coin haut-droit (titre, fil d'Ariane, liens
-   de spécifications, listing) et interceptait leurs clics. On le sort du fixed : il
-   revient dans le flux, en tête de <body>, en float:right — le fil d'Ariane et le
-   contenu s'enroulent donc à sa gauche (au lieu de couler dessous), sans vide au-dessus.
-   Étant dans le flux, il défile avec la page (comportement mobile voulu, pas d'élément
-   flottant qui gênerait plus bas). position:relative (et non le fixed neutralisé) pour
-   que la poignée/icône (::before/::after en absolute) restent calées sur le bouton.
+   de spécifications, listing) et interceptait leurs clics. On sort le coin haut-droit
+   du fixed et de l'absolute : il revient dans le flux, en tête de <body>, en
+   float:right — le fil d'Ariane et le contenu s'enroulent donc à sa gauche (au lieu de
+   couler dessous), sans vide au-dessus. Étant dans le flux, il défile avec la page
+   (comportement mobile voulu, pas d'élément flottant qui gênerait plus bas). Le bouton
+   y redevient un élément du groupe, à droite de l'icône. position:relative (et non le
+   fixed neutralisé) pour que la poignée/icône (::before/::after en absolute) restent
+   calées sur le bouton.
    footer { clear:both } : sur une page courte, le bas du float peut dépasser le contenu ;
    sans clear, le filet du pied de page s'enroulerait autour du bouton au lieu de partir
    pleine largeur. */
 @media (max-width:768px) {
-  #theme-toggle { position:relative; float:right; top:0; right:0;
-                  margin:0 0 .3rem .6rem; }
+  .top-actions { position:static; float:right; height:auto; padding-right:0;
+                 margin:0 0 .3rem .6rem; }
+  #theme-toggle { position:relative; top:0; right:0; }
   footer { clear:both; }
 }
 
@@ -541,7 +556,7 @@ _PAGE = Template("""<!DOCTYPE html>
 $theme_init<link rel="stylesheet" href="$css_href">
 </head>
 <body>
-$theme_toggle
+<div class="top-actions">$repo_link$theme_toggle</div>
 $crumbs<main>
 $body
 </main>
@@ -562,7 +577,7 @@ def esc(s) -> str:
 
 
 # Logo GitHub officiel (mark-github d'Octicons, monochrome), en currentColor pour
-# suivre la couleur du footer. aria-hidden : décorative, le lien porte l'aria-label.
+# suivre la couleur du lien. aria-hidden : décorative, le lien porte l'aria-label.
 _GITHUB_ICON = (
     '<svg viewBox="0 0 16 16" width="1.4em" height="1.4em" fill="currentColor"'
     ' aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59'
@@ -575,20 +590,23 @@ _GITHUB_ICON = (
     ' 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>')
 
 
-def render_footer(footer_md: str, generated: str, repo_url: str = "") -> str:
-    """Assemble le <footer> : « Généré le <date>. » (préfixe automatique) suivi du
-    texte de pied de page rédigé en Markdown (converti en HTML). Si `repo_url` est
-    renseigné, une petite icône GitHub (lien vers le dépôt) est ajoutée, discrète, à
-    la fin. `generated` est une date déjà formatée ; elle est échappée, le Markdown
-    est converti (texte échappé en interne). Renvoie le bloc <footer>…</footer>."""
-    prefix = f"Généré le {esc(generated)}. " if generated else ""
-    repo = (f'<a class="repo-link" href="{esc(repo_url)}" target="_blank"'
+def render_repo_link(repo_url: str) -> str:
+    """Icône GitHub menant au dépôt du code, posée en haut à droite de chaque page, à
+    gauche du bouton de thème. `repo_url` vide : pas d'icône."""
+    if not repo_url:
+        return ""
+    return (f'<a class="repo-link" href="{esc(repo_url)}" target="_blank"'
             f' rel="noopener" aria-label="Code source sur GitHub"'
-            f' title="Code source sur GitHub">{_GITHUB_ICON}</a>') if repo_url else ""
-    # Le texte est enveloppé pour rester UN seul bloc : sinon, le <footer> en flex
-    # traiterait chaque nœud (texte, lien data.geopf.fr, icône) comme un item juxtaposé.
-    return (f'<footer><span class="footer-text">{prefix}'
-            f'{md_to_html_inline(footer_md)}</span>{repo}</footer>')
+            f' title="Code source sur GitHub">{_GITHUB_ICON}</a>')
+
+
+def render_footer(footer_md: str, generated: str) -> str:
+    """Assemble le <footer> : « Généré le <date>. » (préfixe automatique) suivi du
+    texte de pied de page rédigé en Markdown (converti en HTML). `generated` est une
+    date déjà formatée ; elle est échappée, le Markdown est converti (texte échappé en
+    interne). Renvoie le bloc <footer>…</footer>."""
+    prefix = f"Généré le {esc(generated)}. " if generated else ""
+    return f"<footer>{prefix}{md_to_html_inline(footer_md)}</footer>"
 
 
 def md_to_html_inline(md: str) -> str:
@@ -675,10 +693,10 @@ def write_favicon(out_dir: str) -> None:
 
 
 def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
-               footer: str, out_dir: str) -> None:
+               footer: str, out_dir: str, repo_link: str = "") -> None:
     """Écrit une page. `out_dir` est la racine du site : il sert à calculer le chemin
     relatif vers la feuille de style partagée (profondeur = nb de dossiers entre la
-    page et la racine)."""
+    page et la racine). `repo_link` : icône GitHub pré-rendue (render_repo_link)."""
     os.makedirs(fs_dir, exist_ok=True)
     rel = os.path.relpath(fs_dir, out_dir)     # "." à la racine, "a/b" en profondeur
     depth = 0 if rel == os.curdir else len(rel.split(os.sep))
@@ -686,7 +704,7 @@ def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
     favicon_href = "../" * depth + FAVICON
     page = _PAGE.substitute(title=esc(title), css_href=css_href,
                             favicon_href=favicon_href, body=body,
-                            crumbs=crumbs, footer=footer,
+                            crumbs=crumbs, footer=footer, repo_link=repo_link,
                             theme_init=_THEME_INIT, theme_toggle=_THEME_TOGGLE,
                             code_copy=_CODE_COPY_JS)
     with open(os.path.join(fs_dir, "index.html"), "w", encoding="utf-8") as f:
