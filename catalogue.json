@@ -9,7 +9,8 @@
   // supprimer : "include": false. Pour lister les nouveaux produits de l'API
   // absents d'ici : python build.py --check
 
-  // Présentation du site web généré (titres, textes, garde-fou d'affichage).
+  // Présentation du site web généré (titres, textes, garde-fou d'affichage,
+  // comptage d'audience).
   "site": {
     "title": "Téléchargement Géoplateforme",
     // Chapô affiché sous le titre de l'accueil (texte simple ; vide = pas de chapô).
@@ -20,11 +21,16 @@
     "help_text": "Besoin d'aide sur le service de téléchargement ? Voir",
     "help_link_label": "la documentation officielle cartes.gouv.fr",
     // Pied de page, en Markdown (liens autorisés). « Généré le <date>. » est préfixé
-    // automatiquement au build.
-    "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr.",
+    // automatiquement au build. Le pied de page étant le même à toutes les profondeurs,
+    // un lien interne part de la racine du site (/confidentialite/).
+    "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr. Audience mesurée sans cookie par [GoatCounter](https://www.goatcounter.com/). [Confidentialité et mentions légales](/confidentialite/).",
     // Garde-fou d'affichage : un dossier dépassant ce nombre d'entrées n'est pas
     // déplié (le service pourrait en servir davantage). 0 = illimité.
-    "max_entries": 50000
+    "max_entries": 50000,
+    // Comptage d'audience GoatCounter (sans cookie) : hôte de l'instance, qui reçoit
+    // les visites sur /count et sert le script /count.js. Vide = pas de comptage
+    // (retirer alors la mention du pied de page).
+    "goatcounter": "vps-d4204a5b.vps.ovh.net"
   },
 
   // Services de téléchargement interrogés :

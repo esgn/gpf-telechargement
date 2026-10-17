@@ -16,7 +16,8 @@ vers `data.geopf.fr`. C'est un index navigable, plus lisible que le service brut
 - **Zéro dépendance** - bibliothèque standard Python uniquement (Python ≥ 3.11).
 - **Front minimal** - HTML sémantique + une feuille CSS partagée (`style.css`, sobre,
   responsive, mode sombre automatique) ; petits scripts JavaScript inline pour
-  mémoriser le thème clair/sombre et copier les URL ou les exemples de code.
+  mémoriser le thème clair/sombre et copier les URL ou les exemples de code, plus le
+  script de comptage d'audience [GoatCounter](https://www.goatcounter.com/) (sans cookie).
 - Hébergeable tel quel sur GitHub Pages (ou tout serveur statique).
 
 ## Comment ça marche
@@ -136,6 +137,7 @@ finales** (pour rester éditable à la main). Cinq blocs :
 | `help_text`, `help_link_label` | Texte et libellé du lien d'aide de l'accueil ; `help_text` vide masque le bloc. |
 | `footer` | Pied de page en Markdown ; la date de génération en heure de Paris est ajoutée automatiquement. |
 | `repo_url` | Lien du dépôt (icône GitHub en haut à droite de chaque page) ; vide pour masquer l'icône. |
+| `goatcounter` | Hôte d'une instance [GoatCounter](https://www.goatcounter.com/) qui compte les visites de chaque page (sans cookie), avec un bouton de refus dans le pied de page ; vide pour ne rien compter. |
 | `max_entries` | Seuil d'entrées au-delà duquel un dossier renvoie vers le flux source ; `0` = illimité. Le catalogue fourni le fixe à `50000`. |
 | `cloud_help_url` | Lien optionnel vers des tutoriels externes dans l'encart d'accès direct. |
 
@@ -253,6 +255,10 @@ ressource correspondante dans le service de téléchargement. C'est le cas des
 pages MNT, MNS et MNH LiDAR HD. Le fichier Markdown fournit le contenu de la fiche,
 y compris son titre et ses liens ; le catalogue fournit sa carte et son thème.
 
+[`pages/confidentialite.md`](pages/confidentialite.md) fait exception : c'est la page
+« Confidentialité et mentions légales », publiée à `/confidentialite/` sans carte ni
+thème, et liée depuis le pied de page.
+
 Les pages et tutoriels utilisent le convertisseur de [`gpf/markdown.py`](gpf/markdown.py) :
 titres `#` à `###`, paragraphes, listes à puces, séparateurs, liens, gras, italique,
 code en ligne et blocs de code clôturés. Deux espaces en fin de ligne permettent
@@ -290,7 +296,7 @@ build.py            CLI + orchestration (crawl, pages, encarts cloud, assets)
 catalogue.json      métadonnées éditoriales des produits (éditées à la main)
 RULES.md            règles d'affichage appliquées à tous les produits (doc lisible)
 assets/             statiques copiés tels quels vers site/assets (logos producteurs…)
-pages/              sources Markdown des pages éditoriales (converties au build, non copiées)
+pages/              sources Markdown des pages éditoriales et de confidentialité (converties)
 tutos/              tutoriels d'accès direct par produit, convertis en onglets
 gpf/
   model.py          fonctions pures : human_size, fmt_date, slug, resource_id, is_md5…

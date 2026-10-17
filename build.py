@@ -42,6 +42,8 @@ DEFAULT_OUT = "site"
 ASSETS_DIR = "assets"        # copié tel quel vers <out>/assets (logos de producteurs…)
 PAGES_DIR = "pages"          # sources Markdown des pages éditoriales (converties, NON copiées)
 TUTOS_DIR = "tutos"          # tutos cloud-native par produit : tutos/<id>.md (Markdown, convertis)
+PRIVACY_SLUG = "confidentialite"  # pages/confidentialite.md, publiée à /confidentialite/
+                                  # (lien du pied de page, cf. site.footer du catalogue)
 # Services de téléchargement interrogés, avec repli si le catalogue ne les précise
 # pas. « download » = arborescence classique (service historique) ; « chunk » = accès
 # direct cloud-native (GeoParquet / FlatGeoBuf interrogeables à distance à la couche).
@@ -89,6 +91,8 @@ def _site(cat: Catalogue) -> dict:
         "help_link_label": s.get("help_link_label", DEFAULT_HELP_LABEL),
         "footer": s.get("footer", DEFAULT_FOOTER),
         "repo_url": s.get("repo_url", DEFAULT_REPO_URL),
+        # Hôte de l'instance GoatCounter (comptage d'audience) ; vide = pas de comptage.
+        "goatcounter": s.get("goatcounter", ""),
         # Garde-fou de rendu : on ne déplie pas un dossier au-delà de ce nombre
         # d'entrées (le service, lui, pourrait en servir davantage). 0 = illimité.
         "max_entries": s.get("max_entries", 0),
@@ -247,8 +251,9 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     generated = f"{fmt_datetime(now_paris.isoformat())} (heure de Paris)"
     footer = render.render_footer(site["footer"], generated)
     repo_link = render.render_repo_link(site["repo_url"])
-    ctx = Ctx(client, out_dir, footer, repo_link, max_entries=site["max_entries"],
-              workers=workers, fail_fast=fail_fast)
+    analytics = render.render_goatcounter(site["goatcounter"])
+    ctx = Ctx(client, out_dir, footer, repo_link, analytics,
+              max_entries=site["max_entries"], workers=workers, fail_fast=fail_fast)
     _warn_uncurated_formats(ctx, resources)
     # Ressources du 2e service (cloud-native), pour les badges et encarts d'accès direct.
     # {} si aucun produit ne le déclare ou si le service est indisponible (non bloquant).
@@ -336,6 +341,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
         render.write_favicon(out_dir)         # favicon SVG partagée (une fois)
         _write_theme_pages(ctx, cat, sections)
         _write_home(ctx, cat, sections, site)
+        _write_privacy_page(ctx)
 
     elapsed = time.monotonic() - t0
     eff_rps = client.requests / elapsed if elapsed else 0.0
@@ -555,6 +561,16 @@ def _write_home(ctx: Ctx, cat: Catalogue, sections, site) -> None:
                             help_text=site["help_text"],
                             help_link_label=site["help_link_label"])
     ctx.write_page(ctx.out_dir, site["title"], body, crumbs="")
+
+
+def _write_privacy_page(ctx: Ctx) -> None:
+    """Page « Confidentialité et mentions légales » à la racine du site
+    (/confidentialite/) : pages/confidentialite.md converti en HTML."""
+    with open(os.path.join(PAGES_DIR, f"{PRIVACY_SLUG}.md"), encoding="utf-8") as f:
+        body = to_html(f.read())
+    title = "Confidentialité et mentions légales"
+    ctx.write_page(os.path.join(ctx.out_dir, PRIVACY_SLUG), title, body,
+                   render.breadcrumb([("Accueil", 1), (title, 0)]))
 
 
 def _copy_assets(out_dir: str) -> None:

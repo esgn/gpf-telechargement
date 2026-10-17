@@ -5,7 +5,8 @@
 
 import unittest
 
-from build import _cards, _patch_cloud, _splice_cloud, _CLOUD_START, _CLOUD_END
+from build import (_cards, _patch_cloud, _splice_cloud, _write_privacy_page,
+                   _CLOUD_START, _CLOUD_END, PRIVACY_SLUG)
 from gpf import atom, cloud, render
 from gpf.markdown import split_sections, to_html
 from gpf.catalogue import (CatalogueError, Product, load_catalogue,
@@ -990,6 +991,29 @@ class TestRender(unittest.TestCase):
         self.assertLess(repo, page.index('id="theme-toggle"'))
         self.assertNotIn("repo-link", page[page.index("<footer>"):])
 
+    def test_render_goatcounter(self):
+        # hôte renseigné : script du bouton de refus, puis extrait officiel GoatCounter
+        s = render.render_goatcounter("stats.example.org")
+        self.assertTrue(s.endswith('<script data-goatcounter="https://stats.example.org/count"'
+                                   ' async src="//stats.example.org/count.js"></script>'))
+        # le bouton pose ou retire la clé que count.js lit avant chaque envoi
+        self.assertIn("k='skipgc'", s)
+        self.assertIn("localStorage.setItem(k,'t')", s)
+        self.assertIn("localStorage.removeItem(k)", s)
+        # hôte vide : ni comptage, ni bouton
+        self.assertEqual(render.render_goatcounter(""), "")
+
+    def test_goatcounter_end_of_body(self):
+        # le script de comptage ferme la page, juste avant </body>
+        import os
+        import tempfile
+        script = render.render_goatcounter("stats.example.org")
+        with tempfile.TemporaryDirectory() as d:
+            render.write_page(d, "T", "x", crumbs="", footer="<footer>f</footer>",
+                              out_dir=d, analytics=script)
+            page = open(os.path.join(d, "index.html"), encoding="utf-8").read()
+        self.assertIn(script + "\n</body>", page)
+
 
 class TestMarkdown(unittest.TestCase):
     def test_headings(self):
@@ -1339,6 +1363,23 @@ class TestServices(unittest.TestCase):
         cat = load_catalogue("catalogue.json")
         self.assertTrue(any(p.cloud_native for p in cat.products))
         self.assertEqual(cat.get("BDTOPO").cloud_native, "BDTOPO_PQT")
+
+
+class TestPrivacyPage(unittest.TestCase):
+    def test_privacy_page_at_site_root(self):
+        # pages/confidentialite.md devient /confidentialite/, à un niveau de l'accueil
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            _write_privacy_page(Ctx(_FakeClient({}), d, footer="<footer>f</footer>"))
+            page = open(os.path.join(d, PRIVACY_SLUG, "index.html"), encoding="utf-8").read()
+        self.assertIn("<h1>Confidentialité et mentions légales</h1>", page)
+        self.assertIn('<a href="../">Accueil</a>', page)
+
+    def test_footer_links_privacy_page(self):
+        # le pied de page du catalogue pointe bien vers l'emplacement de la page
+        footer = load_catalogue("catalogue.json").site["footer"]
+        self.assertIn(f"](/{PRIVACY_SLUG}/)", footer)
 
 
 class TestCloudOnly(unittest.TestCase):

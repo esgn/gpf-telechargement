@@ -358,6 +358,12 @@ table.cloud-layers td:not(:first-child) { text-align:right; white-space:nowrap; 
 
 footer { margin-top:3rem; padding-top:1.2rem; border-top:1px solid var(--border);
          font-size:.85rem; color:var(--muted); }
+/* Bouton « Ne plus compter mes visites » (posé par le script de render_goatcounter) :
+   un vrai <button>, utilisable au clavier, habillé comme un lien du pied de page. */
+footer .gc-optout { font:inherit; color:var(--link); background:none; border:0;
+  padding:0; cursor:pointer; }
+footer .gc-optout:hover { text-decoration:underline; }
+footer .gc-optout:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 
 /* Coin haut-droit : icône GitHub (lien vers le dépôt) à gauche de l'interrupteur
    clair/sombre. L'interrupteur est fixé à la fenêtre ; le groupe, lui, reste en haut
@@ -562,6 +568,7 @@ $body
 </main>
 $footer
 $code_copy
+$analytics
 </body>
 </html>
 """)
@@ -598,6 +605,35 @@ def render_repo_link(repo_url: str) -> str:
     return (f'<a class="repo-link" href="{esc(repo_url)}" target="_blank"'
             f' rel="noopener" aria-label="Code source sur GitHub"'
             f' title="Code source sur GitHub">{_GITHUB_ICON}</a>')
+
+
+# Refus du comptage : bouton « Ne plus compter mes visites » ajouté au pied de page.
+# count.js n'envoie rien quand la clé locale « skipgc » vaut « t » (mécanisme de
+# GoatCounter) ; le bouton pose ou retire cette clé, pour ce seul navigateur. Le script
+# s'exécute en fin de page, quand le <footer> existe déjà. Sans stockage local
+# utilisable, pas de bouton : le refus ne pourrait pas être retenu.
+_GOATCOUNTER_OPTOUT_JS = (
+    "<script>(function(){var f=document.querySelector('footer'),k='skipgc';"
+    "try{localStorage.getItem(k);}catch(e){return;}"
+    "var b=document.createElement('button');b.type='button';b.className='gc-optout';"
+    "function maj(){b.textContent=localStorage.getItem(k)==='t'"
+    "?'Réactiver le comptage':'Ne plus compter mes visites';}"
+    "b.addEventListener('click',function(){try{if(localStorage.getItem(k)==='t')"
+    "localStorage.removeItem(k);else localStorage.setItem(k,'t');}catch(e){}maj();});"
+    "maj();f.append(' ',b);})();</script>")
+
+
+def render_goatcounter(host: str) -> str:
+    """Comptage d'audience GoatCounter (sans cookie), en fin de chaque page : bouton de
+    refus dans le pied de page (_GOATCOUNTER_OPTOUT_JS), puis extrait officiel pour une
+    instance `host` qui reçoit les visites sur /count et sert le script /count.js.
+    `host` vide : ni comptage, ni bouton."""
+    if not host:
+        return ""
+    h = esc(host)
+    return (_GOATCOUNTER_OPTOUT_JS +
+            f'<script data-goatcounter="https://{h}/count"'
+            f' async src="//{h}/count.js"></script>')
 
 
 def render_footer(footer_md: str, generated: str) -> str:
@@ -693,10 +729,12 @@ def write_favicon(out_dir: str) -> None:
 
 
 def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
-               footer: str, out_dir: str, repo_link: str = "") -> None:
+               footer: str, out_dir: str, repo_link: str = "",
+               analytics: str = "") -> None:
     """Écrit une page. `out_dir` est la racine du site : il sert à calculer le chemin
     relatif vers la feuille de style partagée (profondeur = nb de dossiers entre la
-    page et la racine). `repo_link` : icône GitHub pré-rendue (render_repo_link)."""
+    page et la racine). `repo_link` : icône GitHub pré-rendue (render_repo_link).
+    `analytics` : script de comptage pré-rendu (render_goatcounter)."""
     os.makedirs(fs_dir, exist_ok=True)
     rel = os.path.relpath(fs_dir, out_dir)     # "." à la racine, "a/b" en profondeur
     depth = 0 if rel == os.curdir else len(rel.split(os.sep))
@@ -706,7 +744,7 @@ def write_page(fs_dir: str, title: str, body: str, *, crumbs: str,
                             favicon_href=favicon_href, body=body,
                             crumbs=crumbs, footer=footer, repo_link=repo_link,
                             theme_init=_THEME_INIT, theme_toggle=_THEME_TOGGLE,
-                            code_copy=_CODE_COPY_JS)
+                            code_copy=_CODE_COPY_JS, analytics=analytics)
     with open(os.path.join(fs_dir, "index.html"), "w", encoding="utf-8") as f:
         f.write(page)
 
