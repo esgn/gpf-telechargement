@@ -538,6 +538,13 @@ class TestCatalogue(unittest.TestCase):
         raw = '{\n  "a": 1,  // fin\n  "b": 2,\n}'
         self.assertEqual(json.loads(strip_json_comments(raw)), {"a": 1, "b": 2})
 
+    def test_comment_with_closing_brace_after_comma(self):
+        # « // }, » après une virgule ne la rend pas finale (cas réel du catalogue :
+        # un produit commenté entre deux produits actifs)
+        import json
+        raw = '[ {"a": 1},\n  // },\n  {"b": 2} ]'
+        self.assertEqual(json.loads(strip_json_comments(raw)), [{"a": 1}, {"b": 2}])
+
     def test_product_defaults(self):
         p = Product({"id": "X"})
         self.assertEqual((p.title, p.theme, p.summary), ("", "", ""))

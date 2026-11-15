@@ -11,6 +11,7 @@ commentaires `//` en début de ligne et les virgules finales — pour qu'il rest
 from __future__ import annotations
 
 import json
+import re
 
 # Thème de repli : tout produit inclus sans thème valide y atterrit, plutôt que
 # de disparaître de la navigation.
@@ -134,62 +135,18 @@ class Catalogue:
         return order
 
 
+# Le texte est parcouru de gauche à droite à la recherche de trois motifs : une chaîne
+# JSON, gardée telle quelle ; un commentaire « // » ou une virgule finale, retirés.
+# Une chaîne étant lue d'un seul bloc, un « // » ou une virgule qu'elle contient (URL,
+# résumé) est préservé. Le « *+ » possessif lit chaque commentaire jusqu'au bout de sa
+# ligne : sans lui, un « // }, » placé après une virgule la ferait passer pour finale.
+_JSONC = re.compile(r'"(?:\\.|[^"\\])*"|//[^\n]*|,(?=(?:\s|//[^\n]*+)*[}\]])')
+
+
 def strip_json_comments(text: str) -> str:
-    """Retire les commentaires `//` (jusqu'à la fin de ligne, hors chaîne) et les
-    virgules finales, pour tolérer un JSON annoté à la main. Analyse en tenant
-    compte des chaînes : une virgule ou un `//` À L'INTÉRIEUR d'une chaîne (p. ex.
-    une URL, ou un résumé décrivant du JSON) est préservé tel quel."""
-    out: list[str] = []
-    in_str = esc = False
-    i, n = 0, len(text)
-    while i < n:
-        ch = text[i]
-        if in_str:
-            out.append(ch)
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            i += 1
-        elif ch == '"':
-            in_str = True
-            out.append(ch)
-            i += 1
-        elif ch == "/" and text[i + 1:i + 2] == "/":
-            i = text.find("\n", i)          # saute le commentaire jusqu'au \n
-            if i < 0:
-                break
-        elif ch == ",":
-            # Virgule finale = suivie (espaces/commentaires/sauts de ligne mis à
-            # part) de } ou ]. On regarde le prochain caractère significatif.
-            j = _next_significant(text, i + 1)
-            if j < n and text[j] in "}]":
-                i += 1                       # on la retire
-            else:
-                out.append(ch)
-                i += 1
-        else:
-            out.append(ch)
-            i += 1
-    return "".join(out)
-
-
-def _next_significant(text: str, i: int) -> int:
-    """Index du prochain caractère non-blanc et hors commentaire `//` à partir de i."""
-    n = len(text)
-    while i < n:
-        if text[i].isspace():
-            i += 1
-        elif text[i] == "/" and text[i + 1:i + 2] == "/":
-            nl = text.find("\n", i)
-            if nl < 0:
-                return n
-            i = nl + 1
-        else:
-            return i
-    return n
+    """Retire les commentaires `//` et les virgules finales d'un JSON annoté à la
+    main, sans toucher au contenu des chaînes (cf. _JSONC)."""
+    return _JSONC.sub(lambda m: m[0] if m[0].startswith('"') else "", text)
 
 
 def load_catalogue(path: str) -> Catalogue:
