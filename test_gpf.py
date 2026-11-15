@@ -31,6 +31,28 @@ class _FakeClient:
         return self.feeds.get(href)
 
 
+# Réglages exigés par load_catalogue (titre du site, URL des services), ajoutés aux
+# catalogues de test qui ne les précisent pas.
+_REQUIRED = {"site": {"title": "T"},
+             "services": {"download": {"base_url": "https://d"},
+                          "chunk": {"base_url": "https://c"}}}
+
+
+def _load_blob(blob: str):
+    """Charge un catalogue de test (JSON en chaîne) via un fichier temporaire, complété
+    des réglages obligatoires qu'il ne précise pas."""
+    import json
+    import os
+    import tempfile
+    fd, path = tempfile.mkstemp(suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump({**_REQUIRED, **json.loads(blob)}, f)
+        return load_catalogue(path)
+    finally:
+        os.remove(path)
+
+
 class TestModel(unittest.TestCase):
     def test_human_size(self):
         self.assertEqual(human_size(None), "—")
@@ -597,49 +619,30 @@ class TestCatalogue(unittest.TestCase):
         self.assertEqual(cat.resolve_theme(p), FALLBACK_THEME)
 
     def test_malformed_theme_rejected(self):
-        import os
-        import tempfile
-        fd, path = tempfile.mkstemp(suffix=".json")
-        try:
-            with os.fdopen(fd, "w") as f:
-                f.write('{"themes":[{"label":"sans id"}],"products":[]}')
-            with self.assertRaises(CatalogueError):
-                load_catalogue(path)
-        finally:
-            os.remove(path)
+        with self.assertRaises(CatalogueError):
+            _load_blob('{"themes":[{"label":"sans id"}],"products":[]}')
 
     def test_duplicate_id_rejected(self):
-        import json
-        import os
-        import tempfile
-        data = '{"themes":[],"products":[{"id":"A"},{"id":"A"}]}'
-        fd, path = tempfile.mkstemp(suffix=".json")
-        try:
-            with os.fdopen(fd, "w") as f:
-                f.write(data)
-            with self.assertRaises(CatalogueError):
-                load_catalogue(path)
-        finally:
-            os.remove(path)
+        with self.assertRaises(CatalogueError):
+            _load_blob('{"themes":[],"products":[{"id":"A"},{"id":"A"}]}')
+
+    def test_site_title_required(self):
+        with self.assertRaises(CatalogueError):
+            _load_blob('{"site":{"intro":"x"},"themes":[],"products":[]}')
+
+    def test_site_options_default_to_neutral(self):
+        # option absente : valeur neutre qui la désactive, jamais un texte de repli
+        site = _load_blob('{"themes":[],"products":[]}').site
+        self.assertEqual((site["title"], site["intro"], site["goatcounter"],
+                          site["max_entries"]), ("T", "", "", 0))
 
 
 class TestProducers(unittest.TestCase):
-    def _load(self, blob: str):
-        import os
-        import tempfile
-        fd, path = tempfile.mkstemp(suffix=".json")
-        try:
-            with os.fdopen(fd, "w") as f:
-                f.write(blob)
-            return load_catalogue(path)
-        finally:
-            os.remove(path)
-
     def test_product_producer_default_empty(self):
         self.assertEqual(Product({"id": "X"}).producers, [])
 
     def test_resolve_producers(self):
-        cat = self._load(
+        cat = _load_blob(
             '{"producers":[{"id":"ign","name":"IGN","logo":"logos/ign.svg"}],'
             '"themes":[],"products":[{"id":"A","producer":"ign"},{"id":"B"}]}')
         self.assertEqual(cat.resolve_producers(cat.get("A")),
@@ -649,7 +652,7 @@ class TestProducers(unittest.TestCase):
 
     def test_resolve_producers_coedition_order_preserved(self):
         # champ « producer » en LISTE (coédition) → plusieurs producteurs, ordre gardé
-        cat = self._load(
+        cat = _load_blob(
             '{"producers":[{"id":"ign","name":"IGN","logo":"logos/ign.svg"},'
             '{"id":"insee","name":"INSEE","logo":"logos/insee.svg"}],'
             '"themes":[],"products":[{"id":"A","producer":["ign","insee"]}]}')
@@ -665,36 +668,36 @@ class TestProducers(unittest.TestCase):
         self.assertEqual(Product({"id": "X", "producer": "ign"}).producers, ["ign"])
 
     def test_producer_logo_optional(self):
-        cat = self._load('{"producers":[{"id":"insee","name":"INSEE"}],'
+        cat = _load_blob('{"producers":[{"id":"insee","name":"INSEE"}],'
                          '"themes":[],"products":[{"id":"A","producer":"insee"}]}')
         self.assertEqual(cat.resolve_producers(cat.get("A")),
                          [{"name": "INSEE", "logo": ""}])
 
     def test_producer_requires_id_and_name(self):
         with self.assertRaises(CatalogueError):
-            self._load('{"producers":[{"name":"sans id"}],"themes":[],"products":[]}')
+            _load_blob('{"producers":[{"name":"sans id"}],"themes":[],"products":[]}')
         with self.assertRaises(CatalogueError):
-            self._load('{"producers":[{"id":"x"}],"themes":[],"products":[]}')
+            _load_blob('{"producers":[{"id":"x"}],"themes":[],"products":[]}')
 
     def test_duplicate_producer_rejected(self):
         with self.assertRaises(CatalogueError):
-            self._load('{"producers":[{"id":"a","name":"A"},{"id":"a","name":"A"}],'
+            _load_blob('{"producers":[{"id":"a","name":"A"},{"id":"a","name":"A"}],'
                        '"themes":[],"products":[]}')
 
     def test_unknown_producer_ref_rejected(self):
         with self.assertRaises(CatalogueError):
-            self._load('{"producers":[],"themes":[],'
+            _load_blob('{"producers":[],"themes":[],'
                        '"products":[{"id":"A","producer":"nope"}]}')
 
     def test_unknown_producer_ref_in_list_rejected(self):
         # un seul id inconnu dans la liste de coédition suffit à lever
         with self.assertRaises(CatalogueError):
-            self._load('{"producers":[{"id":"ign","name":"IGN"}],"themes":[],'
+            _load_blob('{"producers":[{"id":"ign","name":"IGN"}],"themes":[],'
                        '"products":[{"id":"A","producer":["ign","nope"]}]}')
 
     def test_unknown_producer_ref_ok_if_excluded(self):
         # produit exclu → pas de validation de sa référence producteur
-        cat = self._load('{"producers":[],"themes":[],'
+        cat = _load_blob('{"producers":[],"themes":[],'
                          '"products":[{"id":"A","producer":"nope","include":false}]}')
         self.assertEqual(cat.resolve_producers(cat.get("A")), [])
 
@@ -1332,28 +1335,16 @@ class TestCloudBlock(unittest.TestCase):
 
 
 class TestServices(unittest.TestCase):
-    def _load(self, blob: str):
-        import os
-        import tempfile
-        fd, path = tempfile.mkstemp(suffix=".json")
-        try:
-            with os.fdopen(fd, "w") as f:
-                f.write(blob)
-            return load_catalogue(path)
-        finally:
-            os.remove(path)
-
     def test_services_parsed(self):
-        cat = self._load('{"services":{"download":{"base_url":"https://d"},'
-                         '"chunk":{"base_url":"https://c"}},"themes":[],"products":[]}')
-        self.assertEqual(cat.services["download"]["base_url"], "https://d")
-        self.assertEqual(cat.services["chunk"]["base_url"], "https://c")
+        cat = _load_blob('{"services":{"download":{"base_url":"https://dl"},'
+                         '"chunk":{"base_url":"https://ch"}},"themes":[],"products":[]}')
+        self.assertEqual(cat.services, {"download": "https://dl", "chunk": "https://ch"})
 
-    def test_legacy_service_becomes_download(self):
-        # ancien schéma « service » unique → exposé comme services["download"]
-        cat = self._load('{"service":{"base_url":"https://old"},'
-                         '"themes":[],"products":[]}')
-        self.assertEqual(cat.services["download"]["base_url"], "https://old")
+    def test_service_url_required(self):
+        # un service sans URL de base bloque le chargement (pas d'URL de repli)
+        with self.assertRaises(CatalogueError):
+            _load_blob('{"services":{"download":{"base_url":"https://dl"}},'
+                       '"themes":[],"products":[]}')
 
     def test_product_cloud_native_default_and_set(self):
         self.assertEqual(Product({"id": "X"}).cloud_native, "")

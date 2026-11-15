@@ -131,7 +131,7 @@ finales** (pour rester éditable à la main). Cinq blocs :
 
 | Champ de `site` | Rôle |
 |---|---|
-| `title` | Titre du site et de l'accueil. |
+| `title` | Titre du site et de l'accueil (obligatoire). |
 | `intro` | Texte d'introduction de l'accueil ; vide pour le masquer. |
 | `official_help_url` | URL de l'aide officielle. |
 | `help_text`, `help_link_label` | Texte et libellé du lien d'aide de l'accueil ; `help_text` vide masque le bloc. |
@@ -141,8 +141,9 @@ finales** (pour rester éditable à la main). Cinq blocs :
 | `max_entries` | Seuil d'entrées au-delà duquel un dossier renvoie vers le flux source ; `0` = illimité. Le catalogue fourni le fixe à `50000`. |
 | `cloud_help_url` | Lien optionnel vers des tutoriels externes dans l'encart d'accès direct. |
 
-Chaque entrée de `services` accepte `base_url` et `capabilities_path` (défaut
-`/capabilities`). Les URL par défaut sont celles du tableau « Comment ça marche ».
+Les autres champs de `site` sont facultatifs : absents ou vides, ils désactivent
+l'option correspondante. Chaque service de `services` (`download` et `chunk`) doit
+donner son `base_url` ; ce sont les URL du tableau « Comment ça marche ».
 
 ### Champs d'un produit
 

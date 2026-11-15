@@ -44,15 +44,6 @@ PAGES_DIR = "pages"          # sources Markdown des pages éditoriales (converti
 TUTOS_DIR = "tutos"          # tutos cloud-native par produit : tutos/<id>.md (Markdown, convertis)
 PRIVACY_SLUG = "confidentialite"  # pages/confidentialite.md, publiée à /confidentialite/
                                   # (lien du pied de page, cf. site.footer du catalogue)
-# Services de téléchargement interrogés, avec repli si le catalogue ne les précise
-# pas. « download » = arborescence classique (service historique) ; « chunk » = accès
-# direct cloud-native (GeoParquet / FlatGeoBuf interrogeables à distance à la couche).
-DEFAULT_SERVICES = {
-    "download": {"base_url": "https://data.geopf.fr/telechargement",
-                 "capabilities_path": "/capabilities"},
-    "chunk": {"base_url": "https://data.geopf.fr/chunk/telechargement",
-              "capabilities_path": "/capabilities"},
-}
 # Repère d'insertion : _prepend_body insère l'en-tête produit juste après ce <main>
 # du gabarit render._PAGE. Doit rester synchrone avec render._PAGE.
 _MAIN_TAG = "<main>\n"
@@ -60,57 +51,6 @@ _MAIN_TAG = "<main>\n"
 # fiche : --cloud-only remplace ce qui est entre eux sans re-crawler l'arbre de télécharg.
 _CLOUD_START = "<!--cloud-native:start-->"
 _CLOUD_END = "<!--cloud-native:end-->"
-DEFAULT_HELP = ("https://cartes.gouv.fr/aide/fr/guides-utilisateur/"
-                "utiliser-les-services-de-la-geoplateforme/telechargement/")
-# Chapô de l'accueil (repli si "intro" absent de la config site du catalogue).
-DEFAULT_INTRO = ("Parcourez et téléchargez les données de l'IGN diffusées par la "
-                 "Géoplateforme, organisées par thème. Chaque produit renvoie ses "
-                 "spécifications et ses fichiers de téléchargement.")
-# Pied de page (Markdown ; « Généré le <date>. » est préfixé automatiquement au build).
-DEFAULT_FOOTER = ("Index non officiel. Données diffusées par l'IGN via "
-                  "[data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune "
-                  "donnée et pointe les liens de téléchargement directement vers "
-                  "data.geopf.fr.")
-# Bloc « Besoin d'aide » de l'accueil. Texte vide → bloc masqué.
-DEFAULT_HELP_TEXT = "Besoin d'aide sur le service ? Voir"
-DEFAULT_HELP_LABEL = "aide officielle cartes.gouv.fr"
-# Lien vers le dépôt du code (icône GitHub en haut à droite de chaque page). Vide : pas d'icône.
-DEFAULT_REPO_URL = "https://github.com/esgn/gpf-telechargement"
-
-
-def _site(cat: Catalogue) -> dict:
-    """Réglages de présentation du site web, avec repli sur les défauts.
-    (L'accès au service de téléchargement est séparé, voir _service.)"""
-    s = cat.site
-    return {
-        "title": s.get("title", "Téléchargement Géoplateforme"),
-        "intro": s.get("intro", DEFAULT_INTRO),
-        "help_url": s.get("official_help_url", DEFAULT_HELP),
-        # help_text absent → défaut ; présent mais vide → bloc aide masqué (choix voulu).
-        "help_text": s.get("help_text", DEFAULT_HELP_TEXT),
-        "help_link_label": s.get("help_link_label", DEFAULT_HELP_LABEL),
-        "footer": s.get("footer", DEFAULT_FOOTER),
-        "repo_url": s.get("repo_url", DEFAULT_REPO_URL),
-        # Hôte de l'instance GoatCounter (comptage d'audience) ; vide = pas de comptage.
-        "goatcounter": s.get("goatcounter", ""),
-        # Garde-fou de rendu : on ne déplie pas un dossier au-delà de ce nombre
-        # d'entrées (le service, lui, pourrait en servir davantage). 0 = illimité.
-        "max_entries": s.get("max_entries", 0),
-        # Lien optionnel vers des exemples/tutoriels d'usage cloud-native (le tutoriel
-        # détaillé vit hors de la fiche). Vide → l'encart n'affiche pas de lien.
-        "cloud_help_url": s.get("cloud_help_url", ""),
-    }
-
-
-def _service(cat: Catalogue, name: str) -> dict:
-    """Accès à un service de téléchargement (pas le site web), par nom (« download »
-    ou « chunk »), avec repli sur DEFAULT_SERVICES pour toute clé absente du catalogue."""
-    s = cat.services.get(name, {})
-    d = DEFAULT_SERVICES[name]
-    return {
-        "base_url": s.get("base_url", d["base_url"]),
-        "capabilities_path": s.get("capabilities_path", d["capabilities_path"]),
-    }
 
 
 def _section_card(product, title: str, cat: Catalogue,
@@ -161,7 +101,7 @@ def _fetch_chunk_live(ctx: Ctx, cat: Catalogue) -> dict:
     téléchargement classique reste complet), on se contente d'un avertissement."""
     if not any(p.cloud_native for p in cat.included()):
         return {}
-    resources = fetch_capabilities(ctx.client, _service(cat, "chunk"),
+    resources = fetch_capabilities(ctx.client, cat.services["chunk"],
                                    label="service cloud-native (chunk)")
     if resources is None:
         ctx.warnings.append("service cloud-native (chunk) inaccessible "
@@ -238,10 +178,10 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
     tout collecter (fail-at-last, défaut). Le rendu global (accueil, thèmes, assets)
     est alors sauté : le build échoue et rien n'est publié de toute façon."""
     t0 = time.monotonic()
-    site = _site(cat)
-    service = _service(cat, "download")
+    site = cat.site
     client = Client(rps=rps, workers=workers)
-    resources = fetch_capabilities(client, service, label="catalogue de téléchargement")
+    resources = fetch_capabilities(client, cat.services["download"],
+                                   label="catalogue de téléchargement")
     if resources is None:
         return 1
     live = {resource_id(e): e for e in resources}
@@ -340,7 +280,7 @@ def run_build(cat: Catalogue, out_dir: str, only: str | None,
         render.write_robots(out_dir)          # robots.txt : blocage des crawlers IA
         render.write_favicon(out_dir)         # favicon SVG partagée (une fois)
         _write_theme_pages(ctx, cat, sections)
-        _write_home(ctx, cat, sections, site)
+        _write_home(ctx, cat, sections)
         _write_privacy_page(ctx)
 
     elapsed = time.monotonic() - t0
@@ -433,7 +373,7 @@ def run_cloud_only(cat: Catalogue, out_dir: str, only: str | None,
     accès direct. Ne touche ni à l'accueil, ni aux pages de thème, ni aux scripts du
     gabarit (un build complet reste nécessaire pour ceux-là)."""
     t0 = time.monotonic()
-    site = _site(cat)
+    site = cat.site
     client = Client(rps=rps, workers=workers)
     ctx = Ctx(client, out_dir, footer="", workers=workers)
     targets = [p for p in cat.included()
@@ -547,7 +487,8 @@ def _write_theme_pages(ctx: Ctx, cat: Catalogue, sections) -> None:
                        crumbs)
 
 
-def _write_home(ctx: Ctx, cat: Catalogue, sections, site) -> None:
+def _write_home(ctx: Ctx, cat: Catalogue, sections) -> None:
+    site = cat.site
     ordered = []
     for theme_id, label in cat.themes_in_display_order():
         entries = sections.get(theme_id)
@@ -557,7 +498,7 @@ def _write_home(ctx: Ctx, cat: Catalogue, sections, site) -> None:
                         "href": f"{slug(theme_id)}/",
                         "cards": _cards(entries, f"{slug(theme_id)}/")})
     body = render.home_body(ordered, site_title=site["title"],
-                            intro=site["intro"], help_url=site["help_url"],
+                            intro=site["intro"], help_url=site["official_help_url"],
                             help_text=site["help_text"],
                             help_link_label=site["help_link_label"])
     ctx.write_page(ctx.out_dir, site["title"], body, crumbs="")
@@ -642,7 +583,7 @@ def main(argv=None) -> int:
     # 4. --check : sortie anticipée. Rapport de dérive entre le catalogue et l'API.
     if args.check:
         client = Client(rps=args.rps, workers=args.workers)
-        return check_drift(client, cat, _service(cat, "download"), _service(cat, "chunk"))
+        return check_drift(client, cat)
 
     # 5. --cloud-only : sortie anticipée. Réécrit l'encart cloud-native des fiches déjà construites.
     if args.cloud_only is not None:

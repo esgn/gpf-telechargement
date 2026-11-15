@@ -10,7 +10,8 @@
   // absents d'ici : python build.py --check
 
   // Présentation du site web généré (titres, textes, garde-fou d'affichage,
-  // comptage d'audience).
+  // comptage d'audience). Seul « title » est obligatoire : un réglage absent ou vide
+  // est désactivé.
   "site": {
     "title": "Téléchargement Géoplateforme",
     // Chapô affiché sous le titre de l'accueil (texte simple ; vide = pas de chapô).
@@ -24,6 +25,9 @@
     // automatiquement au build. Le pied de page étant le même à toutes les profondeurs,
     // un lien interne part de la racine du site (/confidentialite/).
     "footer": "Index non officiel. Données diffusées par l'IGN via [data.geopf.fr](https://data.geopf.fr) ; ce site n'héberge aucune donnée et pointe les liens de téléchargement directement vers data.geopf.fr. Audience mesurée sans cookie par [GoatCounter](https://www.goatcounter.com/). [Confidentialité et mentions légales](/confidentialite/).",
+    // Dépôt du code source (icône GitHub en haut à droite de chaque page) ; vide =
+    // pas d'icône.
+    "repo_url": "https://github.com/esgn/gpf-telechargement",
     // Garde-fou d'affichage : un dossier dépassant ce nombre d'entrées n'est pas
     // déplié (le service pourrait en servir davantage). 0 = illimité.
     "max_entries": 50000,
@@ -33,7 +37,7 @@
     "goatcounter": "vps-d4204a5b.vps.ovh.net"
   },
 
-  // Services de téléchargement interrogés :
+  // Services de téléchargement interrogés (« base_url » obligatoire pour chacun) :
   //  - "download" : arborescence classique par zone/date/format (fichiers .7z, etc.) ;
   //  - "chunk" : accès direct cloud-native (GeoParquet / FlatGeoBuf interrogeables
   //    à distance, une couche par fichier). Un produit s'y rattache via son champ
@@ -43,14 +47,8 @@
   //    de couches incohérents entre formats). python build.py --check vérifie la dérive
   //    des DEUX services.
   "services": {
-    "download": {
-      "base_url": "https://data.geopf.fr/telechargement",
-      "capabilities_path": "/capabilities"
-    },
-    "chunk": {
-      "base_url": "https://data.geopf.fr/chunk/telechargement",
-      "capabilities_path": "/capabilities"
-    }
+    "download": { "base_url": "https://data.geopf.fr/telechargement" },
+    "chunk": { "base_url": "https://data.geopf.fr/chunk/telechargement" }
   },
 
   // Producteurs affichés sur les cartes produit. Chaque produit référence un

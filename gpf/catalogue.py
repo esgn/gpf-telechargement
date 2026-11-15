@@ -18,6 +18,14 @@ import re
 FALLBACK_THEME = "autres"
 FALLBACK_THEME_LABEL = "Autres jeux de données"
 
+# Réglages facultatifs du bloc « site », avec la valeur neutre qui les désactive quand
+# ils sont absents du catalogue : texte vide (bloc masqué), pas de lien, pas de
+# comptage, 0 = pas de limite. Le titre, lui, est obligatoire (cf. load_catalogue).
+SITE_OPTIONS = {
+    "intro": "", "official_help_url": "", "help_text": "", "help_link_label": "",
+    "footer": "", "repo_url": "", "goatcounter": "", "max_entries": 0,
+    "cloud_help_url": "",
+}
 
 
 class CatalogueError(Exception):
@@ -93,13 +101,12 @@ class Product:
 
 
 class Catalogue:
-    def __init__(self, site: dict, services: dict, themes: list[dict],
+    def __init__(self, site: dict, services: dict[str, str], themes: list[dict],
                  products: list[Product], producers: dict[str, dict] | None = None):
         self.site = site                          # présentation du site web
-        # Services de téléchargement interrogés, par nom : « download » (arborescence
-        # classique) et « chunk » (accès direct cloud-native). Chacun = {base_url,
-        # capabilities_path}. Résolus avec repli sur les défauts par build._service.
-        self.services = services or {}
+        # URL de base des services de téléchargement interrogés, par nom : « download »
+        # (arborescence classique) et « chunk » (accès direct cloud-native).
+        self.services = services
         self.themes = themes                      # ordonnés (ordre d'affichage)
         self.products = products
         self.producers = producers or {}          # id → {name, logo}
@@ -151,7 +158,8 @@ def strip_json_comments(text: str) -> str:
 
 def load_catalogue(path: str) -> Catalogue:
     """Charge, nettoie et valide le catalogue. Lève CatalogueError sur toute
-    incohérence (fichier absent, JSON invalide, id dupliqué, thème inconnu)."""
+    incohérence (fichier absent, JSON invalide, id dupliqué, thème inconnu, titre du
+    site ou URL de service manquant)."""
     try:
         with open(path, encoding="utf-8") as f:
             raw = f.read()
@@ -194,11 +202,20 @@ def load_catalogue(path: str) -> Catalogue:
                         f"« {p.id} » : producteur inconnu « {pid} » "
                         f"(déclarez-le dans producers[] ou laissez-le vide)")
 
-    # Services de téléchargement : schéma actuel « services: {download, chunk} ».
-    # Repli rétro-compatible : un ancien « service » unique devient le « download ».
-    services = data.get("services")
-    if not services and data.get("service"):
-        services = {"download": data["service"]}
+    # Réglages du site : le titre est obligatoire, une option absente prend sa valeur
+    # neutre (cf. SITE_OPTIONS).
+    site = {**SITE_OPTIONS, **data.get("site", {})}
+    if not site.get("title"):
+        raise CatalogueError("titre du site manquant (site.title)")
 
-    return Catalogue(data.get("site", {}), services or {},
-                     themes, products, producers)
+    # Services de téléchargement interrogés : l'URL de base de chacun est obligatoire.
+    services = {}
+    for name in ("download", "chunk"):
+        service = (data.get("services") or {}).get(name)
+        url = service.get("base_url") if isinstance(service, dict) else ""
+        if not url:
+            raise CatalogueError(f"URL du service « {name} » manquante "
+                                 f"(services.{name}.base_url)")
+        services[name] = url
+
+    return Catalogue(site, services, themes, products, producers)
