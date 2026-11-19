@@ -5,15 +5,14 @@ Extraction des bâtiments sur la boite englobante de la commune de Menou (58210)
 ```sql
 INSTALL spatial; LOAD spatial; INSTALL httpfs; LOAD httpfs;
 -- Le filtre sur geometrie_bbox limite la lecture aux groupes de lignes
--- couvrant l'emprise : 300 Mio au lieu de 8 Gio.
+-- couvrant l'emprise : 41 MiB au lieu de 8 GiB.
 SELECT *
-FROM read_parquet('https://data.geopf.fr/chunk/telechargement/download/BDTOPO_PQT/BDTOPO_TOUSTHEMES_3-5_GEOPARQUET_WGS84G_FRA_2026-09-15/batiment.parquet')
-WHERE geometrie_bbox.xmin <= 3.4
-  AND geometrie_bbox.xmax >= 3.2
-  AND geometrie_bbox.ymin <= 47.4
-  AND geometrie_bbox.ymax >= 47.3
+FROM read_parquet(
+    'https://data.geopf.fr/chunk/telechargement/download/BDTOPO_PQT/BDTOPO_TOUSTHEMES_3-5_GEOPARQUET_WGS84G_FRA_2026-09-15/batiment.parquet'
+)
+WHERE geom && ST_MakeEnvelope(3.2, 47.3, 3.4, 47.4)
   AND ST_Intersects(
-      geometrie,
+      geom,
       ST_MakeEnvelope(3.2, 47.3, 3.4, 47.4)
   );
 ```
@@ -30,7 +29,7 @@ ogr2ogr bati_pqt.gpkg \
   -spat 3.2 47.3 3.4 47.4
 ```
 
-## GDAL FlatGeoBuf SOZip
+## GDAL FlatGeoBuf SOZipls
 
 ```bash
 # Attention les FlatGeoBuf sont SOZippés
